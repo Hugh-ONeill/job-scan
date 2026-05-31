@@ -6,7 +6,7 @@ import logging
 import requests
 
 from ..config import Company
-from .base import Posting, html_to_text, normalize_date
+from .base import Posting, html_to_markdown, normalize_date
 
 log = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ def fetch_greenhouse(company: Company) -> list[Posting]:
                 title=job.get("title", "").strip(),
                 location=loc.strip(),
                 url=job.get("absolute_url", ""),
-                description=html_to_text(job.get("content", "")),
+                description=html_to_markdown(job.get("content", "")),
                 # first_published is the original post date; fall back to
                 # updated_at when a board doesn't expose it.
                 posted_at=normalize_date(job.get("first_published") or job.get("updated_at")),

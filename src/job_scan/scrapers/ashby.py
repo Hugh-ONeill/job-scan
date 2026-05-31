@@ -6,7 +6,7 @@ import logging
 import requests
 
 from ..config import Company
-from .base import Posting, html_to_text, normalize_date
+from .base import Posting, html_to_markdown, normalize_date
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ def fetch_ashby(company: Company) -> list[Posting]:
     out: list[Posting] = []
     for job in data.get("jobs", []) or []:
         loc = job.get("location") or ""
-        desc = job.get("descriptionPlain") or html_to_text(job.get("descriptionHtml", ""))
+        desc = html_to_markdown(job.get("descriptionHtml", "")) or job.get("descriptionPlain") or ""
         out.append(
             Posting(
                 company=company.name,

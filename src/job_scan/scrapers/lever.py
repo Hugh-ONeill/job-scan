@@ -6,7 +6,7 @@ import logging
 import requests
 
 from ..config import Company
-from .base import Posting, html_to_text, normalize_date
+from .base import Posting, html_to_markdown, normalize_date
 
 log = logging.getLogger(__name__)
 
@@ -28,11 +28,14 @@ def fetch_lever(company: Company) -> list[Posting]:
         loc = cats.get("location") or ""
         if not loc and cats.get("allLocations"):
             loc = cats["allLocations"][0]
-        desc = job.get("descriptionPlain") or html_to_text(job.get("description", ""))
+        desc = html_to_markdown(job.get("description", ""))
         for block in job.get("lists", []) or []:
             content = block.get("content", "")
             if content:
-                desc += "\n" + html_to_text(content)
+                title = (block.get("text") or "").strip()
+                if title:
+                    desc += f"\n\n**{title}**\n"
+                desc += "\n" + html_to_markdown(content)
         out.append(
             Posting(
                 company=company.name,

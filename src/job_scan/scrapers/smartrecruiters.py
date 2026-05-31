@@ -14,7 +14,7 @@ import logging
 import requests
 
 from ..config import Company
-from .base import Posting, html_to_text, normalize_date
+from .base import Posting, html_to_markdown, normalize_date
 
 log = logging.getLogger(__name__)
 
@@ -39,9 +39,13 @@ def _description(jobAd: dict) -> str:
     secs = (jobAd or {}).get("sections") or {}
     parts = []
     for key in ("jobDescription", "qualifications", "additionalInformation"):
-        text = (secs.get(key) or {}).get("text") or ""
+        section = secs.get(key) or {}
+        text = section.get("text") or ""
         if text:
-            parts.append(html_to_text(text))
+            title = section.get("title") or ""
+            if title:
+                parts.append(f"**{title}**\n")
+            parts.append(html_to_markdown(text))
     return "\n\n".join(parts)
 
 

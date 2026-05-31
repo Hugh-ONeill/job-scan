@@ -48,6 +48,32 @@ function escape(s) {
   }[c]));
 }
 
+// Render the Markdown subset our scrapers emit (headings, bullets, bold,
+// italics, links) to safe HTML. Everything is HTML-escaped first, so the
+// description text can never inject markup; only our own tags are added back.
+function renderMarkdown(md) {
+  const inline = s => escape(s)
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+             '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  const out = [];
+  let para = [], list = null;
+  const flushPara = () => { if (para.length) { out.push(`<p>${para.map(inline).join("<br>")}</p>`); para = []; } };
+  const flushList = () => { if (list) { out.push(`<ul>${list.map(x => `<li>${inline(x)}</li>`).join("")}</ul>`); list = null; } };
+  for (const raw of String(md || "").split("\n")) {
+    const line = raw.trim();
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    const b = line.match(/^[-*]\s+(.*)$/);
+    if (b) { flushPara(); (list = list || []).push(b[1]); }
+    else if (h) { flushPara(); flushList(); const lvl = Math.min(h[1].length, 4); out.push(`<h${lvl}>${inline(h[2])}</h${lvl}>`); }
+    else if (!line) { flushPara(); }            // blank line ends a paragraph but keeps an open list (loose lists)
+    else { flushList(); para.push(line); }
+  }
+  flushPara(); flushList();
+  return out.join("");
+}
+
 function renderPosting(p) {
   const tpl = $("#posting-template");
   const frag = tpl.content.cloneNode(true);
@@ -88,7 +114,7 @@ function renderPosting(p) {
   });
   if (!(p.strengths || []).length) sUl.innerHTML = '<li class="muted">(none recorded)</li>';
   if (!(p.concerns  || []).length) cUl.innerHTML = '<li class="muted">(none recorded)</li>';
-  $(".description pre", root).textContent = p.description || "(description not stored — scored before schema upgrade)";
+  $(".description-body", root).innerHTML = renderMarkdown(p.description || "(description not stored)");
 
   const apply = $(".apply", root);
   apply.href = p.url;

@@ -17,7 +17,7 @@ import logging
 import requests
 
 from ..config import Company
-from .base import Posting, html_to_text, normalize_date
+from .base import Posting, html_to_markdown, normalize_date
 
 log = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ def fetch_workday(company: Company) -> list[Posting]:
                 title=(info.get("title") or jp.get("title") or "").strip(),
                 location=(info.get("location") or jp.get("locationsText") or "").strip(),
                 url=info.get("externalUrl") or f"https://{company.host}{path}",
-                description=html_to_text(info.get("jobDescription", "")),
+                description=html_to_markdown(info.get("jobDescription", "")),
                 posted_at=normalize_date(info.get("startDate")),
                 priority=company.priority,
             )

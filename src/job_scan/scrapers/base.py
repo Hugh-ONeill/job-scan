@@ -44,6 +44,54 @@ def html_to_text(html_str: str) -> str:
     return _WS.sub(" ", text).strip()
 
 
+_SCRIPT_STYLE = re.compile(r"<(script|style)\b[^>]*>.*?</\1>", re.I | re.S)
+_LINK = re.compile(r"<a\b[^>]*?href=[\"']([^\"']*)[\"'][^>]*>(.*?)</a>", re.I | re.S)
+_BOLD = re.compile(r"<(strong|b)\b[^>]*>(.*?)</\1>", re.I | re.S)
+_ITALIC = re.compile(r"<(em|i)\b[^>]*>(.*?)</\1>", re.I | re.S)
+_HEADING = re.compile(r"<h([1-6])\b[^>]*>(.*?)</h\1>", re.I | re.S)
+_LI = re.compile(r"<li\b[^>]*>(.*?)</li>", re.I | re.S)
+_BLOCK_END = re.compile(r"</(p|div|ul|ol|tr|table|section|h[1-6])>", re.I)
+_BR = re.compile(r"<br\s*/?>", re.I)
+_MANY_NL = re.compile(r"\n{3,}")
+
+
+def html_to_markdown(html_str: str) -> str:
+    """Convert job-description HTML to lightweight Markdown.
+
+    Preserves the structure that makes a posting readable (headings, bullet
+    lists, bold, links, paragraphs) instead of flattening to one plain line.
+    Regex-based and intentionally simple, like html_to_text; good enough for
+    the messy, varied HTML that ATS boards emit.
+    """
+    if not html_str:
+        return ""
+    # ATS boards often entity-encode their HTML ("&lt;li&gt;"), sometimes twice.
+    # Unescape up front so the tags are real before we convert them.
+    s = html.unescape(html_str)
+    if "&lt;" in s or "&gt;" in s:
+        s = html.unescape(s)
+    # If there are still no tags, it's already plain/markdown text.
+    if "<" not in s:
+        return _MANY_NL.sub("\n\n", s).strip()
+    s = _SCRIPT_STYLE.sub("", s)
+    s = _LINK.sub(lambda m: f"[{_inline(m.group(2))}]({m.group(1).strip()})", s)
+    s = _BOLD.sub(lambda m: f"**{m.group(2).strip()}**", s)
+    s = _ITALIC.sub(lambda m: f"*{m.group(2).strip()}*", s)
+    s = _HEADING.sub(lambda m: f"\n\n{'#' * int(m.group(1))} {_inline(m.group(2))}\n\n", s)
+    s = _LI.sub(lambda m: f"\n- {_inline(m.group(1))}", s)
+    s = _BR.sub("\n", s)
+    s = _BLOCK_END.sub("\n\n", s)
+    s = _TAG.sub("", s)            # strip any remaining tags
+    # Tidy each line, then collapse runs of blank lines.
+    lines = [re.sub(r"[ \t]+", " ", ln).rstrip() for ln in s.split("\n")]
+    return _MANY_NL.sub("\n\n", "\n".join(lines)).strip()
+
+
+def _inline(fragment: str) -> str:
+    """Collapse inline tags/whitespace inside a heading/list-item/link label."""
+    return _WS.sub(" ", _TAG.sub("", fragment)).strip()
+
+
 def normalize_date(value) -> str:
     """Normalize an ATS date field to an ISO-8601 string, or "" if unusable.
 

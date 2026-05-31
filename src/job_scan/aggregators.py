@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 import requests
 
 from .config import Aggregators
-from .scrapers.base import Posting, html_to_text, normalize_date
+from .scrapers.base import Posting, html_to_markdown, html_to_text, normalize_date
 
 log = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ def _hackernews(agg: Aggregators) -> list[Posting]:
             title=title,
             location=location,
             url=f"https://news.ycombinator.com/item?id={c.get('id')}",
-            description=html_to_text(text),
+            description=html_to_markdown(text),
             posted_at=normalize_date(c.get("created_at")),
         ))
     return out
@@ -112,7 +112,7 @@ def _remoteok(agg: Aggregators) -> list[Posting]:
             title=j.get("position", "").strip(),
             location=f"Remote · {loc}" if loc and loc.lower() != "remote" else "Remote",
             url=j.get("url") or j.get("apply_url", ""),
-            description=html_to_text(j.get("description", "")),
+            description=html_to_markdown(j.get("description", "")),
             posted_at=normalize_date(j.get("date")),
         ))
     return out
@@ -139,7 +139,7 @@ def _remotive(agg: Aggregators) -> list[Posting]:
                 title=(j.get("title") or "").strip(),
                 location=f"Remote · {loc}",
                 url=j.get("url", ""),
-                description=html_to_text(j.get("description", "")),
+                description=html_to_markdown(j.get("description", "")),
                 posted_at=normalize_date(j.get("publication_date")),
             )
     return list(seen.values())
@@ -168,7 +168,7 @@ def _weworkremotely(agg: Aggregators) -> list[Posting]:
             # WWR titles are "Company: Role".
             company, _, role = raw_title.partition(":")
             region = (it.findtext("region") or "Remote").strip()
-            desc = html_to_text(it.findtext("description") or "")
+            desc = html_to_markdown(it.findtext("description") or "")
             out.append(Posting(
                 company=company.strip() or "(WWR)",
                 ats="weworkremotely",

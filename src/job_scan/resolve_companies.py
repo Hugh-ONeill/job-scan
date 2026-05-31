@@ -1,0 +1,133 @@
+"""Resolve hiring-without-whiteboards companies to a supported ATS.
+
+Most of the ~800 list entries link to a company careers page rather than an ATS
+board. We fetch each page once and sniff the ATS slug out of the final URL +
+HTML (many embed a Greenhouse/Lever/Ashby/SmartRecruiters board, or are on
+Workday). The resolved set is written to config/no_whiteboard_companies.yaml and
+scanned by the weekly run. Pages that are JS-only or on unsupported/custom ATSs
+don't resolve — that's expected (~9% yield) and logged.
+
+This is slow (one HTTP fetch per company) and meant to run occasionally, not
+every scan; the weekly run reads the cached YAML.
+"""
+from __future__ import annotations
+
+import concurrent.futures as cf
+import logging
+import re
+
+import requests
+
+from .config import CONFIG_DIR
+from .interview_style import load_no_whiteboard
+
+log = logging.getLogger(__name__)
+
+OUT = CONFIG_DIR / "no_whiteboard_companies.yaml"
+UA = {"User-Agent": "Mozilla/5.0 (compatible; job-scan/0.1)"}
+TIMEOUT = 15
+
+# Ordered: first match wins. Each yields the identifying slug.
+_GREENHOUSE = re.compile(r"(?:boards(?:-api)?\.|job-boards\.)greenhouse\.io/(?:v1/boards/|embed/job_board\?for=)?([a-zA-Z0-9_-]+)")
+_LEVER = re.compile(r"(?:jobs|api)\.lever\.co/(?:v0/postings/)?([a-zA-Z0-9_-]+)")
+_ASHBY = re.compile(r"(?:jobs\.ashbyhq\.com|api\.ashbyhq\.com/posting-api/job-board)/([a-zA-Z0-9_-]+)")
+_SR = re.compile(r"(?:jobs|careers|api)\.smartrecruiters\.com/(?:v1/companies/)?([a-zA-Z0-9_-]+)")
+# Workday public UI: https://<host>.myworkdayjobs.com/<locale?>/<SITE>
+_WORKDAY = re.compile(r"https?://([a-z0-9-]+\.[a-z0-9]+\.myworkdayjobs\.com)/((?:[a-z]{2}-[A-Z]{2}/)?[A-Za-z0-9_]+)")
+
+
+def detect(blob: str) -> dict | None:
+    m = _GREENHOUSE.search(blob)
+    if m and m.group(1) not in ("v1", "embed"):
+        return {"ats": "greenhouse", "slug": m.group(1)}
+    m = _LEVER.search(blob)
+    if m and m.group(1) not in ("v0", "postings"):
+        return {"ats": "lever", "slug": m.group(1)}
+    m = _ASHBY.search(blob)
+    if m and m.group(1) != "posting-api":
+        return {"ats": "ashby", "slug": m.group(1)}
+    m = _WORKDAY.search(blob)
+    if m:
+        host = m.group(1)
+        board = m.group(2).split("/")[-1]  # drop any locale prefix
+        return {"ats": "workday", "slug": host.split(".")[0], "host": host, "board": board}
+    m = _SR.search(blob)
+    if m and m.group(1) not in ("v1", "companies"):
+        return {"ats": "smartrecruiters", "slug": m.group(1)}
+    return None
+
+
+def _resolve_one(entry: dict) -> dict | None:
+    try:
+        r = requests.get(entry["url"], headers=UA, timeout=TIMEOUT, allow_redirects=True)
+        hit = detect(r.url + " " + r.text[:250_000])
+    except Exception:
+        return None
+    if not hit:
+        return None
+    return {"name": entry["name"], **hit}
+
+
+def resolve_all(max_workers: int = 14, validate: bool = True) -> list[dict]:
+    table = load_no_whiteboard()
+    entries = list(table.values())
+    log.info("resolving %d companies (one fetch each) ...", len(entries))
+    resolved: list[dict] = []
+    with cf.ThreadPoolExecutor(max_workers=max_workers) as ex:
+        for got in ex.map(_resolve_one, entries):
+            if got:
+                resolved.append(got)
+    log.info("detected ATS for %d/%d companies", len(resolved), len(entries))
+
+    # Dedup by (ats, slug) — different list entries can point at the same board.
+    seen: set[tuple] = set()
+    unique = []
+    for c in resolved:
+        key = (c["ats"], c["slug"].lower())
+        if key not in seen:
+            seen.add(key)
+            unique.append(c)
+
+    if validate:
+        unique = _validate(unique, max_workers)
+    return unique
+
+
+def _validate(companies: list[dict], max_workers: int) -> list[dict]:
+    """Keep only entries whose ATS API actually returns at least one posting."""
+    from .config import Company
+    from .scrapers import fetch_ashby, fetch_greenhouse, fetch_lever, fetch_smartrecruiters, fetch_workday
+    handlers = {
+        "greenhouse": fetch_greenhouse, "lever": fetch_lever, "ashby": fetch_ashby,
+        "workday": fetch_workday, "smartrecruiters": fetch_smartrecruiters,
+    }
+
+    def ok(c: dict) -> dict | None:
+        try:
+            comp = Company(name=c["name"], ats=c["ats"], slug=c["slug"],
+                           host=c.get("host", ""), board=c.get("board", ""))
+            return c if handlers[c["ats"]](comp) else None
+        except Exception:
+            return None
+
+    log.info("validating %d candidates against their ATS APIs ...", len(companies))
+    out = []
+    with cf.ThreadPoolExecutor(max_workers=max_workers) as ex:
+        for got in ex.map(ok, companies):
+            if got:
+                out.append(got)
+    log.info("validated %d live boards", len(out))
+    return out
+
+
+def write_yaml(companies: list[dict]) -> str:
+    import yaml
+    companies = sorted(companies, key=lambda c: c["name"].lower())
+    header = (
+        "# Auto-generated by `job-scan resolve-nw` from the hiring-without-\n"
+        "# whiteboards list. These companies interview with take-homes / pair\n"
+        "# programming / real-work exercises. Scanned by the weekly run\n"
+        "# (`job-scan run --with-no-whiteboard`). Re-run resolve-nw to refresh.\n"
+    )
+    OUT.write_text(header + yaml.safe_dump({"companies": companies}, sort_keys=False))
+    return str(OUT)

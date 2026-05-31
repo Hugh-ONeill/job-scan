@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>job-scan dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+  <h1>job-scan</h1>
+  <div id="stats" class="stats"></div>
+</header>
+
+<section class="controls">
+  <label>
+    Min score
+    <input type="number" id="min-score" value="60" min="0" max="100" step="5">
+  </label>
+  <label>
+    Show top
+    <input type="number" id="top-per-company" value="2" min="1" max="20" step="1">
+    per company
+  </label>
+  <fieldset class="status-filter">
+    <legend>Show</legend>
+    <label><input type="checkbox" value="pending"   checked> Pending</label>
+    <label><input type="checkbox" value="applied"   checked> Applied</label>
+    <label><input type="checkbox" value="dismissed">         Dismissed</label>
+  </fieldset>
+  <label class="search-label">
+    Search
+    <input type="search" id="q" placeholder="company, title, location, words…">
+  </label>
+</section>
+
+<main id="groups">
+  <p class="empty">Loading…</p>
+</main>
+
+<template id="group-template">
+  <section class="group">
+    <header class="group-head">
+      <h2 class="group-name"></h2>
+      <span class="group-meta"></span>
+      <button class="btn group-toggle" hidden>Show all</button>
+    </header>
+    <div class="group-rows"></div>
+  </section>
+</template>
+
+<template id="posting-template">
+  <div class="posting">
+    <button class="posting-head" type="button">
+      <span class="score"></span>
+      <span class="posting-title"></span>
+      <span class="posting-meta"></span>
+      <span class="status-tag"></span>
+    </button>
+    <div class="detail" hidden>
+      <p class="rationale"></p>
+      <div class="two-col">
+        <div class="strengths">
+          <h4>Strengths</h4>
+          <ul></ul>
+        </div>
+        <div class="concerns">
+          <h4>Concerns</h4>
+          <ul></ul>
+        </div>
+      </div>
+      <details class="description">
+        <summary>Full posting description</summary>
+        <pre></pre>
+      </details>
+      <div class="actions">
+        <a class="btn primary apply" target="_blank" rel="noopener">Apply →</a>
+        <button class="btn dismiss" type="button">Dismiss</button>
+        <button class="btn reset" type="button">Reset to pending</button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

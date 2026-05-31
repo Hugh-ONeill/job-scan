@@ -1,0 +1,101 @@
+# Pre-LLM filters. Cheap keyword/location checks that drop obvious
+# misses before we spend Gemma time on them.
+
+# Title must match at least one of these (case-insensitive substring).
+title_include:
+  - software engineer
+  - full stack
+  - full-stack
+  - fullstack
+  - backend
+  - back-end
+  - frontend
+  - front-end
+  - web engineer
+  - applications engineer
+  - product engineer
+  - platform engineer
+  - python
+  - typescript
+  - react
+
+# Title must NOT match any of these (case-insensitive substring).
+# Tuned for ~5-7 years experience: senior is in range, staff/principal/+ out.
+title_exclude:
+  # Internships only — they generally require active student enrollment and are
+  # temporary. "new grad" / entry-level / junior full-time roles are NOT
+  # excluded: the candidate is open to any level (actively job-searching).
+  - intern
+  - internship
+
+  # IC levels above target. "staff" alone catches "Staff Software Engineer",
+  # "Senior Staff Software Engineer", etc.; "staff engineer" alone misses
+  # them because there's a word between.
+  - principal
+  - staff
+  - distinguished
+
+  # management — broad coverage. "manager" substring catches "Manager,
+  # Software Engineering", "Senior Manager", "Engineering Manager",
+  # "Analytics Manager"; "director" catches "Director, Software Engineering";
+  # "vp" requires care (could hit "vpn" — unusual in job titles).
+  - manager
+  - director
+  - vp of
+  - vp,
+  - vp engineering
+  - vice president
+  - head of
+  - tech lead
+
+  # non-engineering pretending to be engineering. "analyst" catches
+  # Affirm-style "Analyst I, Full Stack". Note: "analytics" is *not* a
+  # substring of "analyst" so legit "Software Engineer, Analytics Platform"
+  # roles still pass.
+  - analyst
+  - analytics lead
+  - sales engineer
+  - solutions engineer
+  - field engineer
+  - support engineer
+  - customer engineer
+  - prompt engineer
+
+  # specialization out of scope for a generalist full-stack profile
+  - security engineer
+  - data engineer
+  - ml engineer
+  - machine learning engineer
+  - research engineer
+  - devops
+  - sre
+  - site reliability
+  - hardware
+  - firmware
+  - embedded
+  - ios
+  - android engineer
+  - mobile engineer
+
+# Location must match at least one (case-insensitive substring).
+# Leave list empty to accept all locations.
+location_include:
+  - remote
+  - united states
+  - usa
+  - new york
+  - nyc
+  - new jersey
+  - pittsburgh
+  - philadelphia
+  - boston
+  - chatham
+  - hybrid
+
+# Location must NOT match any of these.
+location_exclude:
+  - "remote - emea"
+  - "remote - europe"
+  - "remote - apac"
+  - "remote - latam"
+  - "remote - india"

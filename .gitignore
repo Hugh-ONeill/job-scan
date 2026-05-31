@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+data/seen.db
+data/seen.db.bak
+data/*.bak
+data/resume_cache.txt
+data/resume_cache.mtime
+data/no_whiteboard.json
+reports/*.md
+!reports/.gitkeep

@@ -1,0 +1,117 @@
+# job-scan settings
+
+resume_path: ~/Downloads/Resume.pdf
+
+# Ollama model used for matching. Reuses your local Gemma.
+ollama:
+  host: http://localhost:11434
+  # 26b-a4b MoE: ~4B active params, much faster for batch scoring than the
+  # dense 31B and fits comfortably in 24 GB. Swap to 31b-it for higher quality
+  # if you have the VRAM free.
+  model: gemma4:26b-a4b-it-q4_K_M
+  # request timeout in seconds (matching is the slowest step)
+  timeout: 180
+
+# Match scoring threshold (0-100). Postings below this are stored as
+# "seen" but not surfaced in the report. Raise to be more selective.
+min_score: 60
+
+# How the LLM's sub-scores are combined into the final 0-100 number.
+# The model rates skill_fit / seniority_fit / domain_fit (0-100) and picks a
+# location_tier (1-4); everything below is applied deterministically in Python:
+#
+#   capability = skill_weight*skill_fit + (1-skill_weight)*seniority_fit
+#   base       = capability * (domain_floor + (1-domain_floor)*domain_fit/100)
+#   final      = clamp(base + location_points[tier] + freshness_points(age))
+scoring:
+  # Weight of skill vs seniority inside the capability score.
+  skill_weight: 0.7
+  # An out-of-scope specialization (domain_fit=0) still keeps this fraction of
+  # capability. Lower = harsher demotion for ML/security/SRE/embedded/mobile.
+  domain_floor: 0.45
+  # Points added per location tier (see location_preference below for tiers).
+  location_points:
+    1: 8     # fully remote (US / anywhere-incl-US)
+    2: 7     # explicit relocation package or visa sponsorship
+    3: 6     # commutable in NJ (northern/central NJ, Jersey City, Newark, ...)
+    4: 5     # commutable NYC metro / Manhattan
+    5: 4     # commutable Philadelphia
+    6: 0     # US in-office elsewhere, no relocation language (neutral)
+    7: -6    # explicitly no relocation/visa, or international w/o sponsorship
+  # Freshness: newer postings score higher. Checked top-to-bottom; first
+  # bucket whose max_days covers the posting's age wins. The 1-day bucket gets
+  # an outsized boost to push brand-new postings to the front of the report.
+  freshness_buckets:
+    - {max_days: 1,   points: 12}   # brand new — jump the queue
+    - {max_days: 7,   points: 6}    # posted within a week
+    - {max_days: 21,  points: 3}    # within three weeks
+    - {max_days: 60,  points: 0}    # within two months (neutral)
+    - {max_days: 180, points: -4}   # getting stale
+  freshness_stale_points: -8        # older than the last bucket
+  freshness_unknown_points: 0       # posting date couldn't be determined
+
+# Free-text location preference used to nudge the LLM score.
+# Hard include/exclude rules still live in filters.yaml — this is the
+# *preference* that shapes the soft score within whatever passes filters.
+location_preference: |
+  Candidate is currently based in central New Jersey and IS willing to
+  relocate anywhere for the right role. However, many employers do NOT
+  cover relocation, so practical fit depends on whether the role removes
+  the relocation logistics burden. Pick the SINGLE best-matching tier
+  number (1-7) for the posting's location + any relocation/visa language.
+
+  Tier 1 — Fully remote (US, or anywhere-including-US).
+
+  Tier 2 — Any location where the posting EXPLICITLY mentions relocation
+    assistance, a relocation package, "we'll relocate the right candidate,"
+    or visa sponsorship. The employer removing the logistics burden is the
+    strongest non-remote signal.
+
+  Tier 3 — In-office or hybrid commutable WITHIN New Jersey: central/
+    northern NJ, Jersey City, Newark, Hoboken, Chatham. (No commute over a
+    state line — the easiest day-to-day.)
+
+  Tier 4 — In-office or hybrid in the NYC metro / Manhattan.
+
+  Tier 5 — In-office or hybrid in Philadelphia.
+
+  Tier 6 — Neutral. US-based in-office in another city with NO relocation
+    language either way (SF, Seattle, Austin, Chicago, Boston, DC,
+    Pittsburgh, LA, Denver, etc.). The candidate could move but self-funds.
+
+  Tier 7 — Negative. The posting EXPLICITLY states no relocation and no visa
+    sponsorship, OR it is an international in-office role with no sponsorship
+    mentioned (the candidate cannot take it without a visa).
+
+  Do NOT penalize the candidate for unwillingness to move — they ARE
+  willing. Only Tier 7 is a penalty, and only when the employer's stance
+  makes the logistics impossible or explicitly unsupported.
+
+# Cross-company aggregators — surface jobs from companies NOT in companies.yaml.
+# These flow through the same title/location filters and scoring as everything
+# else. Disable any source by setting it to false. Skip all with `run --no-aggregators`.
+aggregators:
+  hackernews: true        # monthly "Ask HN: Who is hiring?" thread
+  remoteok: true          # remoteok.com/api (remote)
+  remotive: true          # remotive.com remote jobs
+  weworkremotely: true    # WWR programming RSS feeds (thin descriptions)
+  # Search terms for sources with server-side search (Remotive). Other sources
+  # are filtered by the title rules in filters.yaml.
+  queries:
+    - software engineer
+    - full stack
+    - backend
+    - frontend
+  # Cap postings pulled per source per run (keeps the daily scoring load sane).
+  max_per_source: 200
+
+# Top N matches highlighted at the top of the report and in notify-send.
+top_n: 10
+
+# notify-send urgency: low, normal, critical
+notify_urgency: normal
+
+# Hard cap on postings scored per run, to keep daily runtime reasonable.
+# New unseen postings beyond this cap are deferred to the next run.
+# 150 @ ~20s/posting once Gemma is warm is ~50min worst case.
+max_score_per_run: 150

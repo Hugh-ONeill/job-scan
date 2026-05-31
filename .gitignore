@@ -9,3 +9,5 @@ data/resume_cache.mtime
 data/no_whiteboard.json
 reports/*.md
 !reports/.gitkeep
+# Personal cover letters (contain PII; working docs, not app code).
+cover-letters/

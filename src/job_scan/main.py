@@ -300,6 +300,12 @@ def cmd_resolve_nw(args: argparse.Namespace) -> int:
     """Resolve the hiring-without-whiteboards list to scannable ATS companies."""
     from .resolve_companies import resolve_all, write_yaml
     companies = resolve_all(validate=not args.no_validate)
+    if not companies:
+        # A network outage makes every fetch fail and resolve_all return []. Writing
+        # that would clobber the cached list with `companies: []`. Bail non-zero so
+        # the weekly.sh fallback keeps the existing cache instead of wiping it.
+        log.error("resolved 0 companies (likely a network failure); keeping cached list")
+        return 1
     path = write_yaml(companies)
     from collections import Counter
     by_ats = dict(Counter(c["ats"] for c in companies))

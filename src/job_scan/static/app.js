@@ -21,6 +21,15 @@ function formatDate(iso) {
   return iso.slice(0, 10);
 }
 
+// Whole days since an ISO timestamp, or null if absent/unparseable. Computed
+// live so age reflects now, not the (frozen) freshness_days stored at scan time.
+function daysSince(iso) {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (isNaN(t)) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / 86400000));
+}
+
 function ageStr(days) {
   if (days === null || days === undefined) return "";
   if (days <= 0) return "posted today";
@@ -33,9 +42,11 @@ function breakdownStr(p) {
   return `skill ${p.skill_fit} · seniority ${p.seniority_fit} · domain ${p.domain_fit} · loc-tier ${p.location_tier}`;
 }
 
-// Freshest-first within a score tie; unknown age sorts last.
+// Freshest-first within a score tie; unknown age sorts last. Live from
+// posted_at so the order tracks real age, not the frozen scan-time snapshot.
 function freshOf(p) {
-  return (p.freshness_days === null || p.freshness_days === undefined) ? 1e9 : p.freshness_days;
+  const d = daysSince(p.posted_at);
+  return d === null ? 1e9 : d;
 }
 
 function statusTag(status) {
@@ -86,7 +97,7 @@ function renderPosting(p) {
 
   $(".posting-title", root).textContent = p.title;
   const metaParts = [p.location || "(no location)"];
-  const age = ageStr(p.freshness_days);
+  const age = ageStr(daysSince(p.posted_at));
   if (age) metaParts.push(age);
   if (p.interview_style) metaParts.push(`🤝 ${p.interview_style}`);
   metaParts.push(`seen ${formatDate(p.first_seen)}`);

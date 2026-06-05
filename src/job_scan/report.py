@@ -114,6 +114,26 @@ def write_report(scored: list[Scored], settings: Settings) -> str:
     return str(path)
 
 
+def notify_failure(failed: int, attempted: int) -> None:
+    """Critical desktop alert when scoring is broken (e.g. Ollama down), so a
+    run that scored nothing isn't mistaken for a genuinely quiet day."""
+    if not shutil.which("notify-send"):
+        return
+    subprocess.run(
+        [
+            "notify-send",
+            "-u",
+            "critical",
+            "-a",
+            "job-scan",
+            "job-scan: scoring is failing",
+            f"{failed}/{attempted} postings failed to score — check that Ollama "
+            f"is up and the model is loaded.",
+        ],
+        check=False,
+    )
+
+
 def notify(scored: list[Scored], settings: Settings, report_path: str) -> None:
     if not shutil.which("notify-send"):
         return

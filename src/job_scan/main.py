@@ -18,7 +18,7 @@ from .config import (
 from .filter import passes
 from .interview_style import load_no_whiteboard
 from .matcher import combine, score_posting
-from .report import Scored, notify, write_report
+from .report import Scored, notify, notify_failure, write_report
 from .resume import load_resume_text
 from .scrapers.base import fetch_all
 from .scrapers import (
@@ -29,6 +29,10 @@ from .store import connect, filter_new, mark_liveness, mark_notified, record_sco
 WEB_HOST = "127.0.0.1"
 WEB_PORT = 8765
 WEB_URL = f"http://{WEB_HOST}:{WEB_PORT}/"
+
+# If at least this fraction of attempted scores error out (and >= 2 fail), treat
+# the run as broken rather than quiet — see the alert at the end of cmd_run.
+SCORE_FAILURE_ALERT_RATE = 0.5
 
 log = logging.getLogger("job-scan")
 
@@ -117,6 +121,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             new_postings = new_postings[: settings.max_score_per_run]
 
         scored: list[Scored] = []
+        failed = 0
         for i, p in enumerate(new_postings, 1):
             log.info("[%d/%d] scoring %s | %s", i, len(new_postings), p.company, p.title)
             try:
@@ -124,6 +129,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                                   settings.location_preference, no_whiteboard)
             except Exception as e:
                 log.warning("scoring failed for %s/%s: %s", p.company, p.title, e)
+                failed += 1
                 continue
             scored.append(Scored(posting=p, match=m))
             record_scored(
@@ -148,6 +154,18 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not args.no_open and above > 0:
         _ensure_web_running()
         _xdg_open(WEB_URL)
+
+    # Distinguish "0 matches because nothing fit" from "0 because scoring broke"
+    # (Ollama down, model unloaded). A high failure rate means the run's numbers
+    # are not trustworthy — alert loudly and exit non-zero so the systemd unit
+    # shows as failed instead of silently reporting an empty day.
+    attempted = len(new_postings)
+    if attempted and failed >= 2 and failed / attempted >= SCORE_FAILURE_ALERT_RATE:
+        log.error("scoring failed for %d/%d postings this run — is Ollama up and the model loaded?",
+                  failed, attempted)
+        if not args.no_notify:
+            notify_failure(failed, attempted)
+        return 1
 
     return 0
 

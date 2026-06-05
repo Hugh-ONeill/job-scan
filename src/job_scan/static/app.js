@@ -30,11 +30,21 @@ function daysSince(iso) {
   return Math.max(0, Math.floor((Date.now() - t) / 86400000));
 }
 
-function ageStr(days) {
-  if (days === null || days === undefined) return "";
-  if (days <= 0) return "posted today";
-  if (days === 1) return "posted 1 day ago";
-  return `posted ${days} days ago`;
+// Age label for a posting. Prefer the board's real publish date (posted_at);
+// when it doesn't expose one (Greenhouse, Ashby) approximate from first_seen —
+// the day it first showed up here — and mark it approximate with "~".
+function ageLabel(p) {
+  const posted = daysSince(p.posted_at);
+  if (posted !== null) {
+    if (posted <= 0) return "posted today";
+    if (posted === 1) return "posted 1 day ago";
+    return `posted ${posted} days ago`;
+  }
+  const seen = daysSince(p.first_seen);
+  if (seen === null) return "";
+  if (seen <= 0) return "~today";
+  if (seen === 1) return "~1 day old";
+  return `~${seen} days old`;
 }
 
 function breakdownStr(p) {
@@ -43,10 +53,13 @@ function breakdownStr(p) {
 }
 
 // Freshest-first within a score tie; unknown age sorts last. Live from
-// posted_at so the order tracks real age, not the frozen scan-time snapshot.
+// posted_at, falling back to first_seen, so the order tracks real age rather
+// than the frozen scan-time snapshot.
 function freshOf(p) {
   const d = daysSince(p.posted_at);
-  return d === null ? 1e9 : d;
+  if (d !== null) return d;
+  const s = daysSince(p.first_seen);
+  return s === null ? 1e9 : s;
 }
 
 function statusTag(status) {
@@ -97,7 +110,7 @@ function renderPosting(p) {
 
   $(".posting-title", root).textContent = p.title;
   const metaParts = [p.location || "(no location)"];
-  const age = ageStr(daysSince(p.posted_at));
+  const age = ageLabel(p);
   if (age) metaParts.push(age);
   if (p.interview_style) metaParts.push(`🤝 ${p.interview_style}`);
   metaParts.push(`seen ${formatDate(p.first_seen)}`);

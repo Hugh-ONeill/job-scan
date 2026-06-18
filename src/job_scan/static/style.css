@@ -205,6 +205,7 @@ main { padding: 20px 24px 60px; }
   border: 1px solid var(--border);
   color: var(--muted);
 }
+.status-tag.visited   { color: var(--accent); border-color: var(--accent); }
 .status-tag.applied   { color: var(--good);  border-color: var(--good); }
 .status-tag.dismissed { color: var(--bad);   border-color: var(--bad); }
 

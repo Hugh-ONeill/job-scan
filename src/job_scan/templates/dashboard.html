@@ -22,9 +22,17 @@
     <input type="number" id="top-per-company" value="2" min="1" max="20" step="1">
     per company
   </label>
+  <label>
+    Sort
+    <select id="sort-mode">
+      <option value="score">Score, then date</option>
+      <option value="date">Date, then score</option>
+    </select>
+  </label>
   <fieldset class="status-filter">
     <legend>Show</legend>
     <label><input type="checkbox" value="pending"   checked> Pending</label>
+    <label><input type="checkbox" value="visited"   checked> Visited</label>
     <label><input type="checkbox" value="applied"   checked> Applied</label>
     <label><input type="checkbox" value="dismissed">         Dismissed</label>
   </fieldset>
@@ -75,6 +83,7 @@
       </details>
       <div class="actions">
         <a class="btn primary apply" target="_blank" rel="noopener">Apply →</a>
+        <button class="btn mark-applied" type="button">Mark applied</button>
         <button class="btn dismiss" type="button">Dismiss</button>
         <button class="btn reset" type="button">Reset to pending</button>
       </div>

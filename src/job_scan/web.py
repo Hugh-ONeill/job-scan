@@ -13,7 +13,7 @@ from .store import DB_PATH, MIGRATIONS, POST_MIGRATION_INDEXES, SCHEMA, dedupe_k
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
-VALID_STATUSES = {"pending", "applied", "dismissed"}
+VALID_STATUSES = {"pending", "visited", "applied", "dismissed"}
 
 
 def _connect() -> sqlite3.Connection:
@@ -91,7 +91,7 @@ def create_app() -> Flask:
     @app.get("/api/postings")
     def list_postings():
         min_score = int(request.args.get("min_score", 0))
-        statuses = request.args.getlist("status") or ["pending", "applied"]
+        statuses = request.args.getlist("status") or ["pending", "visited", "applied"]
         q = request.args.get("q", "").strip().lower()
 
         if not DB_PATH.exists():

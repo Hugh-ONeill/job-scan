@@ -5,6 +5,7 @@ const groupsEl = $("#groups");
 const statsEl = $("#stats");
 const minScoreEl = $("#min-score");
 const topPerCompanyEl = $("#top-per-company");
+const sortModeEl = $("#sort-mode");
 const qEl = $("#q");
 const statusChecks = $$(".status-filter input[type=checkbox]");
 
@@ -142,7 +143,10 @@ function renderPosting(p) {
 
   const apply = $(".apply", root);
   apply.href = p.url;
-  apply.addEventListener("click", () => setStatus(p.fingerprint, "applied"));
+  // Opening the posting marks it "visited", not "applied" — you explicitly
+  // promote to "applied" with the Mark applied button once you actually submit.
+  apply.addEventListener("click", () => setStatus(p.fingerprint, "visited"));
+  $(".mark-applied", root).addEventListener("click", () => setStatus(p.fingerprint, "applied"));
   $(".dismiss", root).addEventListener("click", () => setStatus(p.fingerprint, "dismissed"));
   $(".reset", root).addEventListener("click", () => setStatus(p.fingerprint, "pending"));
 
@@ -240,6 +244,7 @@ async function loadStats() {
 let postings = [];
 let openFps = new Set();
 let expandedGroups = new Set();
+let sortMode = "score";  // "score" = score then date · "date" = date then score
 
 async function load() {
   const params = new URLSearchParams();
@@ -252,19 +257,31 @@ async function load() {
   loadStats();
 }
 
+// Comparator for the active sort mode. "score" leads with score and breaks
+// ties by freshness; "date" leads with freshness and breaks ties by score.
+// Score no longer bakes in age, so the date mode is the way to surface the
+// newest roles within the cluster of equal-fit scores.
+function postingCmp(a, b) {
+  if (sortMode === "date") {
+    return (freshOf(a) - freshOf(b)) || (b.score - a.score);
+  }
+  return (b.score - a.score) || (freshOf(a) - freshOf(b));
+}
+
 function groupByCompany(ps) {
   const groups = new Map();
   for (const p of ps) {
     if (!groups.has(p.company)) groups.set(p.company, []);
     groups.get(p.company).push(p);
   }
-  // Sort each group by score desc, then sort groups by best score desc
+  // Sort within each group, then order groups by the same rule applied to each
+  // group's lead (top) posting — so the active sort governs both levels.
   const arr = [];
   for (const [company, items] of groups) {
-    items.sort((a, b) => (b.score - a.score) || (freshOf(a) - freshOf(b)));
-    arr.push({ company, items, best: items[0].score });
+    items.sort(postingCmp);
+    arr.push({ company, items, lead: items[0] });
   }
-  arr.sort((a, b) => b.best - a.best);
+  arr.sort((a, b) => postingCmp(a.lead, b.lead));
   return arr;
 }
 
@@ -283,6 +300,7 @@ function renderGroups() {
 
 minScoreEl.addEventListener("change", load);
 topPerCompanyEl.addEventListener("change", renderGroups);
+sortModeEl.addEventListener("change", () => { sortMode = sortModeEl.value; renderGroups(); });
 qEl.addEventListener("input", debounce(load, 200));
 statusChecks.forEach(c => c.addEventListener("change", load));
 

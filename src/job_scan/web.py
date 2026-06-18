@@ -8,7 +8,7 @@ from pathlib import Path
 from flask import Flask, abort, jsonify, render_template, request
 
 from .config import DATA_DIR
-from .store import DB_PATH, MIGRATIONS, POST_MIGRATION_INDEXES, SCHEMA
+from .store import DB_PATH, MIGRATIONS, POST_MIGRATION_INDEXES, SCHEMA, dedupe_key
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -138,6 +138,18 @@ def create_app() -> Flask:
             d.setdefault("description", "")
             d.setdefault("strengths", [])
             d.setdefault("concerns", [])
+        # Collapse the same role re-listed under multiple board IDs. Rows are
+        # already ordered best-first (score, then freshness), so the first
+        # occurrence per (company, title) is the representative we keep.
+        seen_keys: set[str] = set()
+        deduped = []
+        for d in out:
+            k = dedupe_key(d.get("company"), d.get("title"))
+            if k in seen_keys:
+                continue
+            seen_keys.add(k)
+            deduped.append(d)
+        out = deduped
         if q:
             out = [
                 d for d in out

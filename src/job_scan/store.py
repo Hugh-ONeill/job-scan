@@ -10,6 +10,20 @@ from .config import DATA_DIR
 
 DB_PATH = DATA_DIR / "seen.db"
 
+
+def dedupe_key(company: str | None, title: str | None) -> str:
+    """Collapse near-duplicate board reqs to a single logical role.
+
+    Each posting keeps its own fingerprint (ats:slug:job-id), so the same role
+    re-listed under multiple job IDs — Brex/Oscar post one req per office,
+    RemoteOK bumps a job with a fresh ID — is correctly stored as distinct rows
+    but is the SAME role to a job seeker. This key (normalized company + title)
+    is what the report and dashboard collapse on for display.
+    """
+    c = " ".join((company or "").split()).casefold()
+    t = " ".join((title or "").split()).casefold()
+    return f"{c}\x1f{t}"
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS postings (
     fingerprint TEXT PRIMARY KEY,

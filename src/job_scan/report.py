@@ -9,6 +9,7 @@ from datetime import date
 from .config import REPORTS_DIR, Settings
 from .matcher import Match
 from .scrapers.base import Posting
+from .store import dedupe_key
 
 
 @dataclass
@@ -27,11 +28,24 @@ def _rank(s: "Scored") -> tuple:
     return (-s.match.score, days if days is not None else 1_000_000)
 
 
+def _collapse(scored: list[Scored]) -> list[Scored]:
+    """Keep one representative per logical role (best by _rank), dropping the
+    same posting re-listed under multiple board IDs. See store.dedupe_key."""
+    best: dict[str, Scored] = {}
+    for s in scored:
+        k = dedupe_key(s.posting.company, s.posting.title)
+        cur = best.get(k)
+        if cur is None or _rank(s) < _rank(cur):
+            best[k] = s
+    return list(best.values())
+
+
 def render_markdown(scored: list[Scored], settings: Settings) -> str:
     today = date.today().isoformat()
     if not scored:
         return f"# job-scan {today}\n\nNo new postings cleared filters today.\n"
 
+    scored = _collapse(scored)
     new_high = [s for s in scored if s.match.score >= settings.min_score]
     priority_hits = [s for s in new_high if s.posting.priority]
     top = sorted(new_high, key=_rank)[: settings.top_n]

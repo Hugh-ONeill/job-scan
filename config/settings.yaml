@@ -16,6 +16,11 @@ ollama:
 # "seen" but not surfaced in the report. Raise to be more selective.
 min_score: 60
 
+# Drop stale postings. A post with a known date older than this is skipped at
+# scan time; the dashboard also hides anything older than this (by post date,
+# or by how long we've been seeing it on the board). 0 disables. Tune to taste.
+max_age_days: 90
+
 # How the LLM's sub-scores are combined into the final 0-100 number.
 # The model rates skill_fit / seniority_fit / domain_fit (0-100) and picks a
 # location_tier (1-4); everything below is applied deterministically in Python:

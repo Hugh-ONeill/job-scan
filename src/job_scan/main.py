@@ -17,7 +17,7 @@ from .config import (
 )
 from .filter import passes
 from .interview_style import load_no_whiteboard
-from .matcher import combine, score_posting
+from .matcher import combine, freshness_days, score_posting
 from .report import Scored, notify, notify_failure, write_report
 from .resume import load_resume_text
 from .scrapers.base import fetch_all
@@ -97,6 +97,20 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     filtered = [p for p in postings if passes(p, filters)]
     log.info("after pre-LLM filters: %d postings", len(filtered))
+
+    # Drop postings whose KNOWN post date is older than max_age_days, before we
+    # spend LLM time on them. Postings without a date (most ATS boards) have no
+    # known age yet and pass here; the dashboard later ages them out by how long
+    # they've been seen. max_age_days=0 disables.
+    if settings.max_age_days:
+        before = len(filtered)
+        filtered = [
+            p for p in filtered
+            if (freshness_days(p.posted_at) or 0) <= settings.max_age_days
+        ]
+        if before - len(filtered):
+            log.info("dropped %d stale postings (> %d days old)",
+                     before - len(filtered), settings.max_age_days)
 
     with connect() as con:
         all_fps = [p.fingerprint for p in filtered]

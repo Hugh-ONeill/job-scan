@@ -16,6 +16,16 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 VALID_STATUSES = {"pending", "visited", "applied", "dismissed"}
 
 
+def _max_age_days() -> int:
+    """Stale-cutoff for the dashboard, from settings. Fail open (0 = no filter)
+    so a settings hiccup never blanks the whole board."""
+    try:
+        from .config import load_settings
+        return int(load_settings().max_age_days)
+    except Exception:
+        return 0
+
+
 def _connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(DB_PATH, timeout=5.0)
@@ -111,6 +121,14 @@ def create_app() -> Flask:
         gone_clause = ""
         if "gone" in cols and request.args.get("include_gone") != "1":
             gone_clause = " AND COALESCE(gone, 0) = 0"
+        # Hide stale postings: a known post date older than max_age_days, else
+        # how long we've been seeing it (first_seen). ?include_stale=1 overrides.
+        age_clause = ""
+        max_age = _max_age_days()
+        if max_age and "first_seen" in cols and request.args.get("include_stale") != "1":
+            date_expr = ("COALESCE(NULLIF(posted_at, ''), first_seen)"
+                         if "posted_at" in cols else "first_seen")
+            age_clause = f" AND julianday('now') - julianday({date_expr}) <= {int(max_age)}"
 
         with _connect() as con:
             if has_status:
@@ -119,6 +137,7 @@ def create_app() -> Flask:
                     SELECT * FROM postings
                     WHERE score >= ? AND COALESCE(status, 'pending') IN ({placeholders})
                     {gone_clause}
+                    {age_clause}
                     {order}
                 """
                 rows = con.execute(sql, [min_score, *statuses]).fetchall()
@@ -127,7 +146,7 @@ def create_app() -> Flask:
                 if "pending" not in statuses:
                     return jsonify([])
                 rows = con.execute(
-                    f"SELECT * FROM postings WHERE score >= ? {gone_clause} {order}",
+                    f"SELECT * FROM postings WHERE score >= ? {gone_clause} {age_clause} {order}",
                     [min_score],
                 ).fetchall()
 

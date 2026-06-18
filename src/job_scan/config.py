@@ -67,6 +67,10 @@ class Settings:
     top_n: int = 10
     notify_urgency: str = "normal"
     max_score_per_run: int = 80
+    # Postings older than this are skipped at scan time (when a post date is
+    # known) and hidden from the dashboard (by post date, else by how long we've
+    # been seeing them). 0 disables the age filter.
+    max_age_days: int = 90
 
 
 @dataclass
@@ -138,6 +142,7 @@ def load_settings() -> Settings:
         top_n=int(raw.get("top_n", 10)),
         notify_urgency=raw.get("notify_urgency", "normal"),
         max_score_per_run=int(raw.get("max_score_per_run", 80)),
+        max_age_days=int(raw.get("max_age_days", 90)),
     )
 
 

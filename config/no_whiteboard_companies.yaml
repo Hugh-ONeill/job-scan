@@ -9,6 +9,11 @@ companies:
 - name: Able
   ats: greenhouse
   slug: able
+- name: Accenture
+  ats: workday
+  slug: accenture
+  host: accenture.wd103.myworkdayjobs.com
+  board: AccentureCareers
 - name: Almabase
   ats: ashby
   slug: Almabase
@@ -59,9 +64,6 @@ companies:
 - name: ContentSquare
   ats: lever
   slug: contentsquare
-- name: ConvertKit
-  ats: ashby
-  slug: kit
 - name: eMarketer
   ats: greenhouse
   slug: emarketer
@@ -98,9 +100,6 @@ companies:
 - name: Home Chef
   ats: greenhouse
   slug: homechef
-- name: HomeLight
-  ats: greenhouse
-  slug: homelight
 - name: HoxHunt
   ats: ashby
   slug: hoxhunt
@@ -118,11 +117,6 @@ companies:
 - name: LaunchDarkly
   ats: greenhouse
   slug: launchdarkly
-- name: Leverton
-  ats: workday
-  slug: mrisoftware
-  host: mrisoftware.wd501.myworkdayjobs.com
-  board: External_CareerSite
 - name: Lob
   ats: greenhouse
   slug: lob
@@ -132,6 +126,9 @@ companies:
 - name: Netlify
   ats: greenhouse
   slug: netlify
+- name: NoRedInk
+  ats: greenhouse
+  slug: noredink
 - name: Nova Credit
   ats: greenhouse
   slug: novacredit
@@ -184,9 +181,6 @@ companies:
 - name: Seesaw
   ats: greenhouse
   slug: seesaw
-- name: Signal AI
-  ats: ashby
-  slug: signal-ai
 - name: Simply Business
   ats: workday
   slug: travelers
@@ -214,6 +208,9 @@ companies:
   slug: springernature
   host: springernature.wd3.myworkdayjobs.com
   board: SpringerNatureCareers
+- name: Surglogs
+  ats: lever
+  slug: surglogs
 - name: Swisscom
   ats: workday
   slug: swisscom
@@ -222,17 +219,15 @@ companies:
 - name: Textio
   ats: greenhouse
   slug: textio
+- name: Tooploox
+  ats: ashby
+  slug: tooploox
 - name: Top Hat
   ats: ashby
   slug: top-hat
 - name: uberall
   ats: ashby
   slug: Uberall
-- name: UserTesting
-  ats: workday
-  slug: usertesting
-  host: usertesting.wd12.myworkdayjobs.com
-  board: UserTesting
 - name: VTEX
   ats: greenhouse
   slug: vtex

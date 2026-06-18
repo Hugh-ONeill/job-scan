@@ -20,14 +20,23 @@ min_score: 60
 # The model rates skill_fit / seniority_fit / domain_fit (0-100) and picks a
 # location_tier (1-4); everything below is applied deterministically in Python:
 #
-#   capability = skill_weight*skill_fit + (1-skill_weight)*seniority_fit
-#   base       = capability * (domain_floor + (1-domain_floor)*domain_fit/100)
-#   final      = clamp(base + location_points[tier] + freshness_points(age))
+#   base  = skill_fit
+#           * (seniority_floor + (1-seniority_floor)*seniority_fit/100)   # gate
+#           * (domain_floor    + (1-domain_floor)   *domain_fit/100)      # gate
+#   final = clamp(base + location_points[tier] + interview_points)
+#
+# Posting age is NOT scored — it's a sort dimension only. The report and
+# dashboard already order by date within a score, so scoring freshness too
+# double-counted it and saturated the top into an undifferentiated wall of 100s.
 scoring:
-  # Weight of skill vs seniority inside the capability score.
-  skill_weight: 0.7
-  # An out-of-scope specialization (domain_fit=0) still keeps this fraction of
-  # capability. Lower = harsher demotion for ML/security/SRE/embedded/mobile.
+  # skill_fit is the capability base; seniority and domain are multiplicative
+  # gates. A role the candidate can't plausibly be hired into (seniority_fit
+  # low, e.g. asking 8+ years) keeps only this fraction of the score, so it's
+  # capped instead of washed out by a high skill_fit. Lower = harsher demotion
+  # of over-leveled roles.
+  seniority_floor: 0.35
+  # An out-of-scope specialization (domain_fit=0) still keeps this fraction.
+  # Lower = harsher demotion for ML/security/SRE/embedded/mobile.
   domain_floor: 0.45
   # Points added per location tier (see location_preference below for tiers).
   location_points:
@@ -38,17 +47,6 @@ scoring:
     5: 4     # commutable Philadelphia
     6: 0     # US in-office elsewhere, no relocation language (neutral)
     7: -6    # explicitly no relocation/visa, or international w/o sponsorship
-  # Freshness: newer postings score higher. Checked top-to-bottom; first
-  # bucket whose max_days covers the posting's age wins. The 1-day bucket gets
-  # an outsized boost to push brand-new postings to the front of the report.
-  freshness_buckets:
-    - {max_days: 1,   points: 12}   # brand new — jump the queue
-    - {max_days: 7,   points: 6}    # posted within a week
-    - {max_days: 21,  points: 3}    # within three weeks
-    - {max_days: 60,  points: 0}    # within two months (neutral)
-    - {max_days: 180, points: -4}   # getting stale
-  freshness_stale_points: -8        # older than the last bucket
-  freshness_unknown_points: 0       # posting date couldn't be determined
 
 # Free-text location preference used to nudge the LLM score.
 # Hard include/exclude rules still live in filters.yaml — this is the

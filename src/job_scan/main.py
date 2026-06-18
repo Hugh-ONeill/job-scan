@@ -265,11 +265,10 @@ def cmd_rescore(args: argparse.Namespace) -> int:
 def cmd_recompute(args: argparse.Namespace) -> int:
     """Recombine stored sub-scores under the current settings — NO LLM calls.
 
-    Use after tuning the scoring config (weights, tiers, freshness, interview
-    nudge) or refreshing the no-whiteboard list. Reads each row's stored
-    skill/seniority/domain/tier/freshness and recomputes the final score +
-    interview tag in seconds. Rows without sub-scores (never LLM-scored) are
-    skipped.
+    Use after tuning the scoring config (weights, tiers, interview nudge) or
+    refreshing the no-whiteboard list. Reads each row's stored
+    skill/seniority/domain/tier and recomputes the final score + interview tag
+    in seconds. Rows without sub-scores (never LLM-scored) are skipped.
     """
     import json
     from .interview_style import classify
@@ -282,7 +281,7 @@ def cmd_recompute(args: argparse.Namespace) -> int:
     with connect() as con:
         rows = con.execute(
             "SELECT fingerprint, company, description, concerns, skill_fit, seniority_fit, "
-            "domain_fit, location_tier, freshness_days FROM postings "
+            "domain_fit, location_tier FROM postings "
             "WHERE skill_fit IS NOT NULL"
         ).fetchall()
         n_tagged = n_cleaned = 0
@@ -294,7 +293,7 @@ def cmd_recompute(args: argparse.Namespace) -> int:
             score = combine(
                 r["skill_fit"], r["seniority_fit"], r["domain_fit"],
                 r["location_tier"] if r["location_tier"] is not None else 6,
-                r["freshness_days"], sc, bonus,
+                sc, bonus,
             )
             # Strip employment-gap / short-tenure concern bullets from stored rows.
             try:

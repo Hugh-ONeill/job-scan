@@ -52,27 +52,28 @@ responsibilities and the candidate's demonstrated skills.
   40-59:  partial overlap only
   0-39:   little overlap
 
-seniority_fit — whether the candidate (~7 years, mid/senior generalist) is
-QUALIFIED for the role and PLAUSIBLY HIREABLE into it. The candidate is open to
-ANY level, including junior/entry-level, so being over-qualified is fine and
-only MILDLY lowers fit (it's still a real option). Penalize hard only when the
-role needs substantially MORE than ~7 years. Use the full range — give a slight
-edge to roles squarely at the candidate's level:
+seniority_fit — whether the candidate (~5 years' professional experience,
+mid-level generalist) is QUALIFIED for the role and PLAUSIBLY HIREABLE into it.
+The candidate is open to ANY level, including junior/entry-level, so being
+over-qualified is fine and barely lowers fit. The penalty is for roles that ask
+for substantially MORE experience than the candidate has: a years-of-experience
+requirement above ~5 is a real demerit that scales with the size of the gap.
+Use the full range:
   95-100: a plain mid-level role at the candidate's most ATTAINABLE level —
-          "Software Engineer" / "Software Engineer II", no "senior" gatekeeping.
-          The candidate has a recent multi-year resume gap, so untitled
-          mid-level roles are the most realistic strong-outcome matches.
-  85-94:  a "Senior Software Engineer" / "Software Engineer III" role — the
-          candidate can do the work, but the resume gap makes the senior bar a
-          bit less likely to clear
-  70-84:  junior / entry-level / new-grad / associate — very attainable and the
-          candidate is open to it, just over-qualified; OR a role asking
-          slightly above range (~8-10 years, "lead")
-  40-69:  a clear level gap in either direction that still isn't hopeless
+          "Software Engineer" / "Software Engineer II", roughly 3-5 years, no
+          "senior" gatekeeping. The most realistic strong-outcome matches.
+  85-94:  a "Senior Software Engineer" / "Software Engineer III" role, or ~6
+          years asked — the candidate can do the work, but it sits at the top
+          of their range, so it's a slightly less certain hire
+  75-84:  junior / entry-level / new-grad / associate — very attainable and the
+          candidate is open to it, just over-qualified
+  55-69:  role asks somewhat ABOVE range (~7-8 years) — qualification is a
+          genuine stretch and the application is a long shot
+  40-54:  role asks well above range (~9-10 years, "lead") — likely under-qualified
   0-39:   out of reach above the candidate — staff / principal / distinguished
           scope, or 10+ years required — where an application is likely rejected
-  Do NOT bury junior roles; the candidate wants them. The penalty band is for
-  roles well ABOVE the candidate's experience.
+  Do NOT bury junior roles; the candidate wants them. The penalty bands (below
+  75) are strictly for roles that demand MORE experience than the candidate has.
 
 domain_fit — whether the candidate could do this role's ACTUAL day-to-day
 engineering work. Judge the work itself, NOT the company's industry: a
@@ -162,32 +163,33 @@ def freshness_days(posted_at: str) -> int | None:
     return max(0, delta.days)
 
 
-def freshness_points(days: int | None, scoring: ScoringConfig) -> int:
-    """Map a posting age to a score adjustment via the configured buckets."""
-    if days is None:
-        return scoring.freshness_unknown_points
-    for max_days, points in scoring.freshness_buckets:
-        if days <= max_days:
-            return points
-    return scoring.freshness_stale_points
-
-
 def combine(
     skill_fit: int,
     seniority_fit: int,
     domain_fit: int,
     location_tier: int,
-    days: int | None,
     scoring: ScoringConfig,
     interview_bonus: int = 0,
 ) -> int:
-    """Assemble the final 0-100 score from the LLM sub-scores + adjustments."""
-    capability = scoring.skill_weight * skill_fit + (1 - scoring.skill_weight) * seniority_fit
-    gate = scoring.domain_floor + (1 - scoring.domain_floor) * (domain_fit / 100)
-    base = capability * gate
+    """Assemble the final 0-100 score from the LLM sub-scores + adjustments.
+
+    The score reflects *fit only* (skill / seniority / domain / location /
+    interview style). Posting age is deliberately NOT a score component: the
+    report and dashboard already sort by date within a score, so folding
+    freshness into the number too just double-counted it — and the brand-new
+    boost was slamming distinct roles into the 100 clamp, producing an
+    undifferentiated wall of 100s. Age stays a sort dimension, not a score one.
+    """
+    # skill_fit is the capability base; seniority and domain are multiplicative
+    # gates. A role the candidate can't plausibly be hired into (low
+    # seniority_fit, e.g. 8+ years required) is capped toward seniority_floor
+    # regardless of skill overlap — it no longer averages out against a high
+    # skill_fit (which used to leave over-leveled roles scoring ~88).
+    sen_gate = scoring.seniority_floor + (1 - scoring.seniority_floor) * (seniority_fit / 100)
+    dom_gate = scoring.domain_floor + (1 - scoring.domain_floor) * (domain_fit / 100)
+    base = skill_fit * sen_gate * dom_gate
     loc = scoring.location_points.get(location_tier, 0)
-    fresh = freshness_points(days, scoring)
-    return _clamp(base + loc + fresh + interview_bonus)
+    return _clamp(base + loc + interview_bonus)
 
 
 def score_posting(
@@ -316,7 +318,7 @@ def _parse(content: str, posting: Posting, scoring: ScoringConfig, no_whiteboard
     days = freshness_days(posting.posted_at)
 
     return Match(
-        score=combine(skill, seniority, domain, tier, days, scoring, bonus),
+        score=combine(skill, seniority, domain, tier, scoring, bonus),
         skill_fit=skill,
         seniority_fit=seniority,
         domain_fit=domain,

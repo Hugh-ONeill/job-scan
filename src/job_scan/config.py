@@ -28,12 +28,23 @@ class ScoringConfig:
     location_tier (1-4). We combine them here so the math is transparent and
     tunable without touching the prompt:
 
-        capability = skill_weight*skill_fit + (1-skill_weight)*seniority_fit
-        base       = capability * (domain_floor + (1-domain_floor)*domain_fit/100)
-        final      = clamp(base + location_points[tier] + freshness_points(age))
+        base  = skill_fit
+                * (seniority_floor + (1-seniority_floor)*seniority_fit/100)
+                * (domain_floor    + (1-domain_floor)   *domain_fit/100)
+        final = clamp(base + location_points[tier] + interview_points)
+
+    Seniority and domain are multiplicative GATES, not averaged terms: a role
+    the candidate isn't plausibly hireable into (low seniority_fit, e.g. asking
+    8+ years) caps the score regardless of how well the skills match, rather
+    than being washed out by a high skill_fit.
+
+    Posting age is NOT in the score — it's a sort dimension only (see
+    matcher.combine). The report/dashboard already order by date within a
+    score, so scoring freshness too just double-counted it and saturated the
+    top into a wall of 100s.
     """
-    skill_weight: float = 0.7          # seniority gets the remaining weight
-    domain_floor: float = 0.45         # out-of-domain roles keep this fraction
+    seniority_floor: float = 0.35      # over/under-leveled roles keep this fraction (gate)
+    domain_floor: float = 0.45         # out-of-domain roles keep this fraction (gate)
     # Nudge for companies that interview with take-homes / pair programming /
     # real-work exercises instead of algorithmic puzzles (hiring-without-
     # whiteboards list, or take-home/pair keywords in the posting).
@@ -44,12 +55,6 @@ class ScoringConfig:
     location_points: dict[int, int] = field(
         default_factory=lambda: {1: 8, 2: 7, 3: 6, 4: 5, 5: 4, 6: 0, 7: -6}
     )
-    # (max_age_days, points) tiers, checked in order; first match wins.
-    freshness_buckets: list[tuple[int, int]] = field(
-        default_factory=lambda: [(1, 12), (7, 6), (21, 3), (60, 0), (180, -4)]
-    )
-    freshness_stale_points: int = -8   # older than the last bucket
-    freshness_unknown_points: int = 0  # posting date missing
 
 
 @dataclass
@@ -107,23 +112,12 @@ def _load_scoring(raw: dict) -> ScoringConfig:
     s = raw.get("scoring") or {}
     defaults = ScoringConfig()
     loc = s.get("location_points")
-    buckets = s.get("freshness_buckets")
     return ScoringConfig(
-        skill_weight=float(s.get("skill_weight", defaults.skill_weight)),
+        seniority_floor=float(s.get("seniority_floor", defaults.seniority_floor)),
         domain_floor=float(s.get("domain_floor", defaults.domain_floor)),
         interview_points=int(s.get("interview_points", defaults.interview_points)),
         location_points=(
             {int(k): int(v) for k, v in loc.items()} if loc else defaults.location_points
-        ),
-        freshness_buckets=(
-            [(int(b["max_days"]), int(b["points"])) for b in buckets]
-            if buckets else defaults.freshness_buckets
-        ),
-        freshness_stale_points=int(
-            s.get("freshness_stale_points", defaults.freshness_stale_points)
-        ),
-        freshness_unknown_points=int(
-            s.get("freshness_unknown_points", defaults.freshness_unknown_points)
         ),
     )
 

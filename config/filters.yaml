@@ -20,7 +20,7 @@ title_include:
   - react
 
 # Title must NOT match any of these (case-insensitive substring).
-# Tuned for ~5-7 years experience: senior is in range, staff/principal/+ out.
+# Tuned for ~5 years experience: senior still in range, staff/principal/+ out.
 title_exclude:
   # Internships only — they generally require active student enrollment and are
   # temporary. "new grad" / entry-level / junior full-time roles are NOT

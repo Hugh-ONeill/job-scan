@@ -1,12 +1,9 @@
 .venv/
 __pycache__/
 *.pyc
-data/seen.db
-data/seen.db.bak
-data/*.bak
-data/resume_cache.txt
-data/resume_cache.mtime
-data/no_whiteboard.json
+# All runtime/personal data (DBs, caches, backups, any variant) — never publish
+data/*
+!data/.gitkeep
 reports/*.md
 !reports/.gitkeep
 # Personal cover letters (contain PII; working docs, not app code).

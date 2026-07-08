@@ -64,6 +64,9 @@ companies:
 - name: ContentSquare
   ats: lever
   slug: contentsquare
+- name: ConvertKit
+  ats: ashby
+  slug: kit
 - name: eMarketer
   ats: greenhouse
   slug: emarketer
@@ -100,6 +103,9 @@ companies:
 - name: Home Chef
   ats: greenhouse
   slug: homechef
+- name: HomeLight
+  ats: greenhouse
+  slug: homelight
 - name: HoxHunt
   ats: ashby
   slug: hoxhunt
@@ -126,9 +132,6 @@ companies:
 - name: Netlify
   ats: greenhouse
   slug: netlify
-- name: NoRedInk
-  ats: greenhouse
-  slug: noredink
 - name: Nova Credit
   ats: greenhouse
   slug: novacredit
@@ -164,6 +167,9 @@ companies:
 - name: Pleo
   ats: ashby
   slug: pleo
+- name: Poll Everywhere
+  ats: lever
+  slug: polleverywhere
 - name: Prokeep
   ats: ashby
   slug: prokeep

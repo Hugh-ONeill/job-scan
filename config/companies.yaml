@@ -46,6 +46,11 @@ sweep:
   # --- Greenhouse: healthtech (3M HIS bridge) ---
   - { name: Oscar Health,    ats: greenhouse, slug: oscar }
 
+  # --- Greenhouse: central-NJ locals (verified 2026-07-08) ---
+  - { name: Commvault,       ats: greenhouse, slug: commvault }   # Tinton Falls
+  - { name: Vonage,          ats: greenhouse, slug: vonage }      # Holmdel
+  - { name: Billtrust,       ats: greenhouse, slug: billtrust }   # Lawrenceville
+
   # --- Ashby ---
   - { name: Replit,          ats: ashby,      slug: replit }
   - { name: Posthog,         ats: ashby,      slug: posthog }
@@ -61,9 +66,37 @@ sweep:
 
   # --- Workday (needs host + board; find them in the careers-page URL:
   #     https://<host>/<board>/...  e.g. nvidia.wd5.myworkdayjobs.com /
-  #     NVIDIAExternalCareerSite. Probe:
+  #     NVIDIAExternalCareerSite — or fetch https://<host>/robots.txt, which
+  #     lists every board as a Sitemap line. Probe:
   #     job-scan probe workday <tenant> --host <host> --board <board>) ---
   - { name: NVIDIA, ats: workday, slug: nvidia, host: nvidia.wd5.myworkdayjobs.com, board: NVIDIAExternalCareerSite }
+
+  # --- Workday: NJ-commutable enterprise employers (pharma / finance /
+  #     fintech), verified via robots.txt + CXS 2026-07-08. Global boards;
+  #     the location filters trim non-US postings. NOTE: Prudential is
+  #     pru.wd5 (Newark) — prudential.wd3 is the unrelated UK insurer. ---
+  - { name: "Johnson & Johnson",    ats: workday, slug: jj,                 host: jj.wd5.myworkdayjobs.com,                 board: JJ }
+  - { name: Bristol Myers Squibb,   ats: workday, slug: bristolmyerssquibb, host: bristolmyerssquibb.wd5.myworkdayjobs.com, board: BMS }
+  - { name: Novartis,               ats: workday, slug: novartis,           host: novartis.wd3.myworkdayjobs.com,           board: Novartis_Careers }
+  - { name: Sanofi,                 ats: workday, slug: sanofi,             host: sanofi.wd3.myworkdayjobs.com,             board: SanofiCareers }
+  - { name: BD,                     ats: workday, slug: bdx,                host: bdx.wd1.myworkdayjobs.com,                board: EXTERNAL_CAREER_SITE_USA }
+  - { name: Organon,                ats: workday, slug: organon,            host: organon.wd5.myworkdayjobs.com,            board: SearchJobs }
+  - { name: Zoetis,                 ats: workday, slug: zoetis,             host: zoetis.wd5.myworkdayjobs.com,             board: zoetis }
+  - { name: Regeneron,              ats: workday, slug: regeneron,          host: regeneron.wd1.myworkdayjobs.com,          board: Careers }
+  - { name: Prudential,             ats: workday, slug: pru,                host: pru.wd5.myworkdayjobs.com,                board: Careers }
+  - { name: Fiserv,                 ats: workday, slug: fiserv,             host: fiserv.wd5.myworkdayjobs.com,             board: EXT }
+  - { name: Broadridge,             ats: workday, slug: broadridge,         host: broadridge.wd5.myworkdayjobs.com,         board: Careers }
+  - { name: "S&P Global",           ats: workday, slug: spgi,               host: spgi.wd5.myworkdayjobs.com,               board: SPGI_Careers }
+  - { name: "Kensho (S&P)",         ats: workday, slug: spgi,               host: spgi.wd5.myworkdayjobs.com,               board: Kensho_Careers }
+  - { name: Nasdaq,                 ats: workday, slug: nasdaq,             host: nasdaq.wd1.myworkdayjobs.com,             board: Global_External_Site }
+  - { name: BlackRock,              ats: workday, slug: blackrock,          host: blackrock.wd1.myworkdayjobs.com,          board: BlackRock_Professional }
+  - { name: TD Bank,                ats: workday, slug: td,                 host: td.wd3.myworkdayjobs.com,                 board: TD_Bank_Careers }
+
+  # --- Workday: central-NJ locals (verified 2026-07-08) ---
+  - { name: Dow Jones,              ats: workday, slug: dowjones,           host: dowjones.wd1.myworkdayjobs.com,           board: Dow_Jones_Career }      # Princeton-area tech campus
+  - { name: Integra LifeSciences,   ats: workday, slug: integralife,        host: integralife.wd1.myworkdayjobs.com,        board: Careers }               # Princeton
+  - { name: NJM Insurance,          ats: workday, slug: njm,                host: njm.wd1.myworkdayjobs.com,                board: njm }                   # West Trenton
+  - { name: "Church & Dwight",      ats: workday, slug: churchdwight,       host: churchdwight.wd1.myworkdayjobs.com,       board: chdcareers }            # Ewing
 
   # --- SmartRecruiters (slug is the case-sensitive company id in
   #     jobs.smartrecruiters.com/<slug>; probe: job-scan probe smartrecruiters <slug>) ---

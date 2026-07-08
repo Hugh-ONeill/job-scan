@@ -15,6 +15,14 @@ title_include:
   - applications engineer
   - product engineer
   - platform engineer
+  # Enterprise/institutional employers (insurers, hospitals, gov, local NJ
+  # shops) title roles "Developer", not "Engineer".
+  - software developer
+  - web developer
+  - application developer
+  - applications developer
+  - java developer
+  - .net developer
   - python
   - typescript
   - react

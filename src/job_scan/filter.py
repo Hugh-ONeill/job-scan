@@ -104,7 +104,14 @@ def passes(posting: Posting, f: Filters) -> bool:
             # include list (which matches "remote" too broadly).
             if not _remote_ok(posting.location):
                 return False
-        elif f.location_include and not _matches_any(loc, f.location_include):
+        elif f.location_include and not (
+            _matches_any(loc, f.location_include)
+            # Enterprise ATSs (Workday etc.) abbreviate: "Princeton - NJ - US",
+            # "Jersey City, NJ". The include list only spells out "new jersey",
+            # so also accept the home-state patterns used for remote roles.
+            or _HOME.search(posting.location)
+            or _HOME_ABBR.search(posting.location)
+        ):
             return False
     if f.location_exclude and _matches_any(loc, f.location_exclude):
         return False

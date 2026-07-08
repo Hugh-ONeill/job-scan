@@ -71,6 +71,10 @@ class Settings:
     # known) and hidden from the dashboard (by post date, else by how long we've
     # been seeing them). 0 disables the age filter.
     max_age_days: int = 90
+    # Per-ATS overrides for max_age_days (e.g. {"workday": 180} — enterprise
+    # boards keep live reqs open far longer than startup ATSs). A value of 0
+    # disables the age filter for that ATS.
+    ats_max_age_days: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -143,6 +147,9 @@ def load_settings() -> Settings:
         notify_urgency=raw.get("notify_urgency", "normal"),
         max_score_per_run=int(raw.get("max_score_per_run", 80)),
         max_age_days=int(raw.get("max_age_days", 90)),
+        ats_max_age_days={
+            str(k): int(v) for k, v in (raw.get("ats_max_age_days") or {}).items()
+        },
     )
 
 

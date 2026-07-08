@@ -16,14 +16,16 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 VALID_STATUSES = {"pending", "visited", "applied", "dismissed"}
 
 
-def _max_age_days() -> int:
-    """Stale-cutoff for the dashboard, from settings. Fail open (0 = no filter)
-    so a settings hiccup never blanks the whole board."""
+def _age_limits() -> tuple[int, dict[str, int]]:
+    """Stale-cutoffs for the dashboard, from settings: (global max_age_days,
+    per-ATS overrides). Fail open (0, {} = no filter) so a settings hiccup
+    never blanks the whole board."""
     try:
         from .config import load_settings
-        return int(load_settings().max_age_days)
+        s = load_settings()
+        return int(s.max_age_days), dict(s.ats_max_age_days)
     except Exception:
-        return 0
+        return 0, {}
 
 
 def _connect() -> sqlite3.Connection:
@@ -123,12 +125,22 @@ def create_app() -> Flask:
             gone_clause = " AND COALESCE(gone, 0) = 0"
         # Hide stale postings: a known post date older than max_age_days, else
         # how long we've been seeing it (first_seen). ?include_stale=1 overrides.
+        # Per-ATS limits (ats_max_age_days) key off the fingerprint's ats prefix
+        # ("ats:slug:id"); a limit of 0 keeps that ATS unfiltered.
         age_clause = ""
-        max_age = _max_age_days()
-        if max_age and "first_seen" in cols and request.args.get("include_stale") != "1":
+        max_age, ats_ages = _age_limits()
+        if (max_age or ats_ages) and "first_seen" in cols and request.args.get("include_stale") != "1":
             date_expr = ("COALESCE(NULLIF(posted_at, ''), first_seen)"
                          if "posted_at" in cols else "first_seen")
-            age_clause = f" AND julianday('now') - julianday({date_expr}) <= {int(max_age)}"
+            if ats_ages:
+                whens = " ".join(f"WHEN '{ats}' THEN {int(days)}"
+                                 for ats, days in sorted(ats_ages.items()))
+                limit_expr = ("CASE substr(fingerprint, 1, instr(fingerprint, ':') - 1) "
+                              f"{whens} ELSE {int(max_age)} END")
+            else:
+                limit_expr = str(int(max_age))
+            age_clause = (f" AND ({limit_expr} = 0 OR "
+                          f"julianday('now') - julianday({date_expr}) <= {limit_expr})")
 
         with _connect() as con:
             if has_status:

@@ -20,7 +20,7 @@ from .interview_style import load_no_whiteboard
 from .matcher import combine, freshness_days, score_posting
 from .report import Scored, notify, notify_failure, write_report
 from .resume import load_resume_text
-from .scrapers.base import fetch_all
+from .scrapers.base import Posting, fetch_all
 from .scrapers import (
     fetch_ashby, fetch_greenhouse, fetch_lever, fetch_smartrecruiters, fetch_workday,
 )
@@ -101,16 +101,19 @@ def cmd_run(args: argparse.Namespace) -> int:
     # Drop postings whose KNOWN post date is older than max_age_days, before we
     # spend LLM time on them. Postings without a date (most ATS boards) have no
     # known age yet and pass here; the dashboard later ages them out by how long
-    # they've been seen. max_age_days=0 disables.
-    if settings.max_age_days:
+    # they've been seen. Per-ATS overrides in ats_max_age_days (enterprise
+    # boards keep live reqs open far longer than startup ATSs). 0 disables,
+    # globally or per ATS.
+    if settings.max_age_days or settings.ats_max_age_days:
         before = len(filtered)
-        filtered = [
-            p for p in filtered
-            if (freshness_days(p.posted_at) or 0) <= settings.max_age_days
-        ]
+
+        def _fresh(p: Posting) -> bool:
+            limit = settings.ats_max_age_days.get(p.ats, settings.max_age_days)
+            return not limit or (freshness_days(p.posted_at) or 0) <= limit
+
+        filtered = [p for p in filtered if _fresh(p)]
         if before - len(filtered):
-            log.info("dropped %d stale postings (> %d days old)",
-                     before - len(filtered), settings.max_age_days)
+            log.info("dropped %d stale postings", before - len(filtered))
 
     with connect() as con:
         all_fps = [p.fingerprint for p in filtered]

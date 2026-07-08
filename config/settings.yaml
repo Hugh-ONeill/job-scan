@@ -21,6 +21,12 @@ min_score: 60
 # or by how long we've been seeing it on the board). 0 disables. Tune to taste.
 max_age_days: 90
 
+# Per-ATS overrides for max_age_days. Enterprise Workday boards keep real,
+# still-hiring reqs open for months (slow pipelines, evergreen postings), so
+# give them a longer leash than startup ATSs. 0 disables for that ATS.
+ats_max_age_days:
+  workday: 180
+
 # How the LLM's sub-scores are combined into the final 0-100 number.
 # The model rates skill_fit / seniority_fit / domain_fit (0-100) and picks a
 # location_tier (1-4); everything below is applied deterministically in Python:

@@ -42,6 +42,26 @@
   </label>
 </section>
 
+<section class="pipeline" id="pipeline" hidden>
+  <header class="pipeline-head">
+    <h2>Applications</h2>
+    <span id="pipeline-summary" class="muted"></span>
+    <button class="btn" id="pipeline-resolved-toggle" type="button" hidden></button>
+    <button class="btn" id="pipeline-toggle" type="button">Hide</button>
+  </header>
+  <div id="pipeline-body">
+    <table class="pipeline-table">
+      <thead>
+        <tr>
+          <th>Company</th><th>Role</th><th>Status</th><th>Applied</th>
+          <th>Quiet</th><th>Follow-ups</th><th>Notes</th>
+        </tr>
+      </thead>
+      <tbody id="pipeline-rows"></tbody>
+    </table>
+  </div>
+</section>
+
 <main id="groups">
   <p class="empty">Loading…</p>
 </main>

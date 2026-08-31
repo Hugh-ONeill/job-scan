@@ -174,7 +174,8 @@ function renderGroup(company, postings, topN) {
   $(".group-name", frag).textContent = company;
   const bestScore = postings[0].score;
   const total = postings.length;
-  const applied = postings.filter(p => p.status === "applied").length;
+  const applied = postings.filter(p =>
+    ["applied", "interview", "offer"].includes(p.status)).length;
   const meta = $(".group-meta", frag);
   const parts = [
     `<span class="score-pill ${scoreClass(bestScore)}">best ${bestScore}</span>`,
@@ -224,6 +225,166 @@ async function setStatus(fp, status) {
   await load();
 }
 
+// ---- Applications pipeline (everything at or past "applied") ----------------
+
+const PIPELINE_STATUSES = ["applied", "interview", "offer", "rejected", "no_response"];
+const OPEN_STATUSES = new Set(["applied", "interview"]);
+const RESOLVED_STATUSES = new Set(["rejected", "no_response"]);
+let showResolved = false;
+let pipelineHidden = false;
+
+async function logFollowup(fp) {
+  const r = await fetch(`/api/postings/${fp}/followup`, { method: "POST" });
+  if (!r.ok) {
+    alert("Failed to log follow-up");
+    return;
+  }
+  await load();
+}
+
+async function saveNotes(fp, notes) {
+  await fetch(`/api/postings/${fp}/notes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ notes }),
+  });
+}
+
+// Nudge state for an open application: "due" (quiet past threshold, a note is
+// still plausible) or "ghosted" (3x threshold or two silent follow-ups — the
+// suggestion is recording no_response, not a third chase).
+function nudgeState(row, threshold, staleAfter) {
+  if (!OPEN_STATUSES.has(row.status) || row.quiet_days === null) return "";
+  const fu = (row.followups || []).length;
+  if (row.quiet_days >= staleAfter || (fu >= 2 && row.quiet_days >= threshold)) return "ghosted";
+  if (row.quiet_days >= threshold && fu < 2) return "due";
+  return "";
+}
+
+function pipelineRow(row, threshold, staleAfter) {
+  const tr = document.createElement("tr");
+  const nudge = nudgeState(row, threshold, staleAfter);
+  if (nudge) tr.classList.add(nudge);
+
+  const company = document.createElement("td");
+  company.textContent = row.company;
+  tr.appendChild(company);
+
+  const role = document.createElement("td");
+  const a = document.createElement("a");
+  a.href = row.url;
+  a.target = "_blank";
+  a.rel = "noopener";
+  a.textContent = row.title;
+  role.appendChild(a);
+  tr.appendChild(role);
+
+  const status = document.createElement("td");
+  const sel = document.createElement("select");
+  for (const s of PIPELINE_STATUSES) {
+    const opt = document.createElement("option");
+    opt.value = s;
+    opt.textContent = s.replace("_", " ");
+    opt.selected = s === row.status;
+    sel.appendChild(opt);
+  }
+  sel.addEventListener("change", () => setStatus(row.fingerprint, sel.value));
+  status.appendChild(sel);
+  tr.appendChild(status);
+
+  const applied = document.createElement("td");
+  applied.textContent = formatDate(row.applied_at);
+  tr.appendChild(applied);
+
+  const quiet = document.createElement("td");
+  if (OPEN_STATUSES.has(row.status) && row.quiet_days !== null) {
+    quiet.textContent = `${row.quiet_days}d`;
+    if (nudge === "due") {
+      quiet.textContent += " · follow up?";
+      quiet.className = "quiet-due";
+    } else if (nudge === "ghosted") {
+      quiet.textContent += " · no_response?";
+      quiet.className = "quiet-ghosted";
+      quiet.title = "Long silence — consider recording no_response";
+    }
+  } else {
+    quiet.textContent = "—";
+  }
+  tr.appendChild(quiet);
+
+  const fu = document.createElement("td");
+  const dates = row.followups || [];
+  fu.append(dates.length ? `${dates.length} (${dates[dates.length - 1]}) ` : "0 ");
+  if (OPEN_STATUSES.has(row.status) && dates.length < 2) {
+    const btn = document.createElement("button");
+    btn.className = "btn tiny";
+    btn.type = "button";
+    btn.textContent = "log";
+    btn.title = "Record that you sent a follow-up today";
+    btn.addEventListener("click", () => logFollowup(row.fingerprint));
+    fu.appendChild(btn);
+  }
+  tr.appendChild(fu);
+
+  const notes = document.createElement("td");
+  const input = document.createElement("input");
+  input.className = "notes-input";
+  input.value = row.notes || "";
+  input.placeholder = "notes…";
+  input.addEventListener("change", () => saveNotes(row.fingerprint, input.value));
+  notes.appendChild(input);
+  tr.appendChild(notes);
+
+  return tr;
+}
+
+async function loadPipeline() {
+  const r = await fetch("/api/pipeline");
+  const { threshold, stale_after, rows } = await r.json();
+  const section = $("#pipeline");
+  if (!rows.length) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+
+  // Open first (nudged rows on top, then quietest); resolved behind a toggle.
+  const open = rows.filter(r => !RESOLVED_STATUSES.has(r.status));
+  const resolved = rows.filter(r => RESOLVED_STATUSES.has(r.status));
+  const weight = r => (nudgeState(r, threshold, stale_after) ? 0 : 1);
+  open.sort((a, b) => weight(a) - weight(b) || (b.quiet_days ?? -1) - (a.quiet_days ?? -1));
+
+  const due = open.filter(r => nudgeState(r, threshold, stale_after) === "due").length;
+  const ghosted = open.filter(r => nudgeState(r, threshold, stale_after) === "ghosted").length;
+  const parts = [`${open.length} open`];
+  if (due) parts.push(`${due} need a follow-up`);
+  if (ghosted) parts.push(`${ghosted} look ghosted`);
+  if (resolved.length) parts.push(`${resolved.length} resolved`);
+  $("#pipeline-summary").textContent = parts.join(" · ");
+
+  const resolvedToggle = $("#pipeline-resolved-toggle");
+  resolvedToggle.hidden = resolved.length === 0;
+  resolvedToggle.textContent = showResolved ? "Hide resolved" : `Show ${resolved.length} resolved`;
+
+  const body = $("#pipeline-rows");
+  body.innerHTML = "";
+  for (const row of open) body.appendChild(pipelineRow(row, threshold, stale_after));
+  if (showResolved) {
+    for (const row of resolved) body.appendChild(pipelineRow(row, threshold, stale_after));
+  }
+  $("#pipeline-body").hidden = pipelineHidden;
+  $("#pipeline-toggle").textContent = pipelineHidden ? "Show" : "Hide";
+}
+
+$("#pipeline-toggle").addEventListener("click", () => {
+  pipelineHidden = !pipelineHidden;
+  loadPipeline();
+});
+$("#pipeline-resolved-toggle").addEventListener("click", () => {
+  showResolved = !showResolved;
+  loadPipeline();
+});
+
 async function loadStats() {
   const r = await fetch("/api/stats");
   const s = await r.json();
@@ -232,7 +393,7 @@ async function loadStats() {
   statsEl.innerHTML = [
     `<span class="pill">Total ${s.total ?? 0}</span>`,
     `<span class="pill">Pending ${bs.pending ?? 0}</span>`,
-    `<span class="pill">Applied ${bs.applied ?? 0}</span>`,
+    `<span class="pill">Applied ${(bs.applied ?? 0) + (bs.interview ?? 0) + (bs.offer ?? 0)}</span>`,
     `<span class="pill">Dismissed ${bs.dismissed ?? 0}</span>`,
     `<span class="pill">90+: ${bk["90+"] ?? 0}</span>`,
     `<span class="pill">80–89: ${bk["80-89"] ?? 0}</span>`,
@@ -251,12 +412,18 @@ let sortMode = "score";  // "score" = score then date · "date" = date then scor
 async function load() {
   const params = new URLSearchParams();
   params.set("min_score", minScoreEl.value || "0");
-  statusChecks.filter(c => c.checked).forEach(c => params.append("status", c.value));
+  statusChecks.filter(c => c.checked).forEach(c => {
+    // "Applied" covers the whole live application: later stages shouldn't
+    // vanish from the board just because the status advanced.
+    const values = c.value === "applied" ? ["applied", "interview", "offer"] : [c.value];
+    values.forEach(v => params.append("status", v));
+  });
   if (qEl.value.trim()) params.set("q", qEl.value.trim());
   const r = await fetch(`/api/postings?${params}`);
   postings = await r.json();
   renderGroups();
   loadStats();
+  loadPipeline();
 }
 
 // Comparator for the active sort mode. "score" leads with score and breaks

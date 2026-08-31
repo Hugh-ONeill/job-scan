@@ -40,17 +40,51 @@ def _collapse(scored: list[Scored]) -> list[Scored]:
     return list(best.values())
 
 
-def render_markdown(scored: list[Scored], settings: Settings, deferred: int = 0) -> str:
+def _followup_section(followups: tuple[list, list] | None) -> list[str]:
+    """Report lines for open applications gone quiet (store.followups_due)."""
+    if not followups:
+        return []
+    due, stale = followups
+    lines: list[str] = []
+    if due:
+        lines += [f"## Follow-ups due ({len(due)})", ""]
+        for d in due:
+            r = d["row"]
+            lines.append(
+                f"- **{r['company']}** — {r['title']} · applied "
+                f"{str(r.get('applied_at') or '?')[:10]} · {d['quiet_days']} days quiet "
+                f"· {d['followups_sent']} follow-up(s) sent · [posting]({r['url']})"
+            )
+        lines.append("")
+    if stale:
+        lines += [
+            f"_{len(stale)} open application(s) look ghosted (long silence, or two "
+            f"follow-ups already sent) — consider recording no_response in the dashboard._",
+            "",
+        ]
+    return lines
+
+
+def render_markdown(
+    scored: list[Scored], settings: Settings, deferred: int = 0,
+    followups: tuple[list, list] | None = None,
+) -> str:
     today = date.today().isoformat()
+    fu_lines = _followup_section(followups)
     if deferred:
-        return (
-            f"# job-scan {today}\n\n"
+        return "\n".join([
+            f"# job-scan {today}", "",
             f"Collected **{deferred}** new postings but scoring was deferred "
             f"(LLM unavailable). They are stored unscored — run "
-            f"`job-scan rescore --unscored-only` once Ollama is back.\n"
-        )
+            f"`job-scan rescore --unscored-only` once Ollama is back.", "",
+            *fu_lines,
+        ]) + "\n"
     if not scored:
-        return f"# job-scan {today}\n\nNo new postings cleared filters today.\n"
+        return "\n".join([
+            f"# job-scan {today}", "",
+            "No new postings cleared filters today.", "",
+            *fu_lines,
+        ]) + "\n"
 
     scored = _collapse(scored)
     new_high = [s for s in scored if s.match.score >= settings.min_score]
@@ -71,6 +105,10 @@ def render_markdown(scored: list[Scored], settings: Settings, deferred: int = 0)
         f"(>= {settings.min_score}) | **{len(priority_hits)}** at priority companies."
     )
     lines.append("")
+
+    # Chasing an application you already sent beats reading one more new
+    # posting, so this leads the report rather than trailing it.
+    lines += fu_lines
 
     if priority_hits:
         lines += ["## Priority companies", ""]
@@ -128,14 +166,34 @@ def _entry(s: Scored, compact: bool = False) -> list[str]:
     return body
 
 
-def write_report(scored: list[Scored], settings: Settings, deferred: int = 0) -> str:
+def write_report(
+    scored: list[Scored], settings: Settings, deferred: int = 0,
+    followups: tuple[list, list] | None = None,
+) -> str:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     path = REPORTS_DIR / f"{date.today().isoformat()}.md"
-    path.write_text(render_markdown(scored, settings, deferred=deferred))
+    path.write_text(
+        render_markdown(scored, settings, deferred=deferred, followups=followups)
+    )
     return str(path)
 
 
-def notify_deferred(collected: int, backlog: int) -> None:
+def _followup_line(followups: tuple[list, list] | None) -> str:
+    """One-line follow-up summary for a desktop notification, "" if nothing due."""
+    if not followups:
+        return ""
+    due, _ = followups
+    if not due:
+        return ""
+    lead = due[0]["row"]
+    extra = f" (+{len(due) - 1} more)" if len(due) > 1 else ""
+    return (f"\n📮 <b>{len(due)} follow-up(s) due</b> — "
+            f"{lead['company']}, {due[0]['quiet_days']}d quiet{extra}")
+
+
+def notify_deferred(
+    collected: int, backlog: int, followups: tuple[list, list] | None = None,
+) -> None:
     """Low-urgency note that today's run only collected (no scoring). Not the
     critical notify_failure alert — deferral is expected while the GPU is out."""
     if not shutil.which("notify-send"):
@@ -145,7 +203,7 @@ def notify_deferred(collected: int, backlog: int) -> None:
             "notify-send", "-u", "low", "-a", "job-scan",
             f"job-scan: collected {collected}, scoring deferred",
             f"{backlog} postings await scoring — `job-scan rescore --unscored-only` "
-            f"once Ollama is back.",
+            f"once Ollama is back.{_followup_line(followups)}",
         ],
         check=False,
     )
@@ -171,13 +229,18 @@ def notify_failure(failed: int, attempted: int) -> None:
     )
 
 
-def notify(scored: list[Scored], settings: Settings, report_path: str) -> None:
+def notify(
+    scored: list[Scored], settings: Settings, report_path: str,
+    followups: tuple[list, list] | None = None,
+) -> None:
     if not shutil.which("notify-send"):
         return
+    fu = _followup_line(followups)
     above = [s for s in scored if s.match.score >= settings.min_score]
     if not above:
         subprocess.run(
-            ["notify-send", "-u", "low", "job-scan", "No new matches today."],
+            ["notify-send", "-u", "low", "job-scan",
+             f"No new matches today.{fu}"],
             check=False,
         )
         return
@@ -186,7 +249,7 @@ def notify(scored: list[Scored], settings: Settings, report_path: str) -> None:
     lines = [f"<b>{len(above)} new match(es)</b> — report: {report_path}", ""]
     for s in top:
         lines.append(f"<b>{s.match.score}</b> · {s.posting.company} — {s.posting.title}")
-    body = "\n".join(lines)
+    body = "\n".join(lines) + fu
     subprocess.run(
         [
             "notify-send",

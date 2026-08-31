@@ -25,8 +25,8 @@ from .scrapers import (
     fetch_ashby, fetch_greenhouse, fetch_lever, fetch_smartrecruiters, fetch_workday,
 )
 from .store import (
-    connect, count_unscored, filter_new, mark_liveness, mark_notified,
-    record_scored, record_unscored, touch_seen,
+    connect, count_unscored, filter_new, followups_due, mark_liveness,
+    mark_notified, record_scored, record_unscored, touch_seen,
 )
 
 WEB_HOST = "127.0.0.1"
@@ -190,23 +190,34 @@ def cmd_run(args: argparse.Namespace) -> int:
                 interview_style=m.interview_style,
             )
 
+        # Open applications gone quiet — surfaced in the same report/notify
+        # pass as new matches, so chasing what's already sent isn't a separate
+        # thing to remember.
+        followups = followups_due(con, settings.followup_after_days)
+    due, stale = followups
+    if due or stale:
+        log.info("follow-ups: %d due, %d look ghosted", len(due), len(stale))
+
     report_path = write_report(scored, settings,
-                               deferred=len(new_postings) if defer else 0)
+                               deferred=len(new_postings) if defer else 0,
+                               followups=followups)
     log.info("report written: %s", report_path)
+
+    fu_note = f" {len(due)} follow-up(s) due." if due else ""
 
     if defer:
         if not args.no_notify:
-            notify_deferred(len(new_postings), backlog)
+            notify_deferred(len(new_postings), backlog, followups)
         print(f"\nDone. {len(new_postings)} postings collected, not scored "
-              f"({backlog} unscored total). Report: {report_path}")
+              f"({backlog} unscored total).{fu_note} Report: {report_path}")
         print("Run `job-scan rescore --unscored-only` once Ollama is back.")
         return 0
 
     if not args.no_notify:
-        notify(scored, settings, report_path)
+        notify(scored, settings, report_path, followups)
 
     above = sum(1 for s in scored if s.match.score >= settings.min_score)
-    print(f"\nDone. {above} new matches above cutoff. Report: {report_path}")
+    print(f"\nDone. {above} new matches above cutoff.{fu_note} Report: {report_path}")
 
     if not args.no_open and above > 0:
         _ensure_web_running()

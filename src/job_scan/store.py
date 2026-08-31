@@ -70,6 +70,13 @@ MIGRATIONS = [
     # 1 once a posting disappears from its board (filled/pulled) — dead link.
     ("gone",     "ALTER TABLE postings ADD COLUMN gone INTEGER DEFAULT 0"),
     ("gone_at",  "ALTER TABLE postings ADD COLUMN gone_at TEXT"),
+    # Application lifecycle (post-'applied' tracking). applied_at anchors the
+    # follow-up quiet-clock; followups is a JSON array of ISO dates a follow-up
+    # was sent; notes is free-form (interview stages, contacts, feedback).
+    ("applied_at",        "ALTER TABLE postings ADD COLUMN applied_at TEXT"),
+    ("status_updated_at", "ALTER TABLE postings ADD COLUMN status_updated_at TEXT"),
+    ("followups",         "ALTER TABLE postings ADD COLUMN followups TEXT"),
+    ("notes",             "ALTER TABLE postings ADD COLUMN notes TEXT"),
 ]
 
 POST_MIGRATION_INDEXES = """
@@ -86,6 +93,14 @@ def _apply_migrations(con: sqlite3.Connection) -> None:
     for col, ddl in MIGRATIONS:
         if col not in existing:
             con.execute(ddl)
+            if col == "applied_at":
+                # Rows already 'applied' predate the column; the real apply
+                # date was never recorded, so seed the quiet-clock with
+                # first_seen (a proxy — typically a few days early, which only
+                # makes the follow-up nudge err on the prompt side).
+                con.execute(
+                    "UPDATE postings SET applied_at = first_seen WHERE status = 'applied'"
+                )
     con.executescript(POST_MIGRATION_INDEXES)
 
 
@@ -179,6 +194,115 @@ def record_scored(
          skill_fit, seniority_fit, domain_fit, location_tier,
          posted_at, freshness_days, interview_style, now, now),
     )
+
+
+# Application lifecycle. pending/visited are pre-application; applied/interview
+# are open applications (the quiet-clock runs on them); offer/rejected/
+# no_response are resolved; dismissed means "not applying".
+STATUSES = {"pending", "visited", "applied", "interview", "offer",
+            "rejected", "no_response", "dismissed"}
+ACTIVE_APP_STATUSES = ("applied", "interview")
+POST_APPLIED_STATUSES = ("applied", "interview", "offer", "rejected", "no_response")
+
+
+def set_status(con: sqlite3.Connection, fingerprint: str, status: str) -> bool:
+    """Change a posting's status, stamping the lifecycle timestamps.
+
+    applied_at is set once, on the first transition into 'applied'; later
+    stages keep it, since it anchors "days since I applied"."""
+    now = _now()
+    cur = con.execute(
+        "UPDATE postings SET status = ?, status_updated_at = ? WHERE fingerprint = ?",
+        (status, now, fingerprint),
+    )
+    if cur.rowcount and status == "applied":
+        con.execute(
+            "UPDATE postings SET applied_at = ? WHERE fingerprint = ? AND applied_at IS NULL",
+            (now, fingerprint),
+        )
+    return cur.rowcount > 0
+
+
+def add_followup(con: sqlite3.Connection, fingerprint: str) -> list[str] | None:
+    """Log that a follow-up was sent today; returns the updated date list
+    (None if the posting doesn't exist). The latest entry resets the
+    quiet-clock — an unlogged follow-up breaks the days-quiet math."""
+    import json
+    row = con.execute(
+        "SELECT followups FROM postings WHERE fingerprint = ?", (fingerprint,)
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        dates = json.loads(row["followups"]) if row["followups"] else []
+    except json.JSONDecodeError:
+        dates = []
+    dates.append(datetime.now().date().isoformat())
+    con.execute(
+        "UPDATE postings SET followups = ? WHERE fingerprint = ?",
+        (json.dumps(dates), fingerprint),
+    )
+    return dates
+
+
+def _parse_dt(s: str | None) -> datetime | None:
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s)
+    except ValueError:
+        return None
+
+
+def quiet_days(row: sqlite3.Row) -> int | None:
+    """Days since the last touch on an application: applied_at, the latest
+    logged follow-up, or the latest status change — whichever is newest (a
+    status bump like applied -> interview means they contacted you)."""
+    import json
+    touches = [_parse_dt(row["applied_at"]), _parse_dt(row["status_updated_at"])]
+    try:
+        touches += [_parse_dt(d) for d in json.loads(row["followups"] or "[]")]
+    except json.JSONDecodeError:
+        pass
+    touches = [t for t in touches if t]
+    if not touches:
+        return None
+    return max(0, (datetime.now() - max(touches)).days)
+
+
+def followups_due(
+    con: sqlite3.Connection, threshold_days: int,
+) -> tuple[list[dict], list[dict]]:
+    """Split open applications gone quiet into (due, stale).
+
+    due: threshold passed since the last touch, fewer than two follow-ups sent
+    (after two silent follow-ups the honest move is recording no_response, not
+    a third nudge), and not yet ancient — a follow-up note is still plausible.
+    stale: quiet at least 3x the threshold, or two follow-ups already silent —
+    past chasing; the suggestion is recording no_response instead.
+    """
+    import json
+    due, stale = [], []
+    stale_after = threshold_days * 3
+    qs = ",".join("?" * len(ACTIVE_APP_STATUSES))
+    for r in con.execute(
+        f"SELECT * FROM postings WHERE status IN ({qs})", ACTIVE_APP_STATUSES
+    ):
+        q = quiet_days(r)
+        if q is None or q < threshold_days:
+            continue
+        try:
+            n_fu = len(json.loads(r["followups"] or "[]"))
+        except json.JSONDecodeError:
+            n_fu = 0
+        entry = {"row": dict(r), "quiet_days": q, "followups_sent": n_fu}
+        if q >= stale_after or n_fu >= 2:
+            stale.append(entry)
+        else:
+            due.append(entry)
+    due.sort(key=lambda d: -d["quiet_days"])
+    stale.sort(key=lambda d: -d["quiet_days"])
+    return due, stale
 
 
 def record_unscored(con: sqlite3.Connection, posting) -> None:

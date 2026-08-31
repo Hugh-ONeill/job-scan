@@ -8,12 +8,16 @@ from pathlib import Path
 from flask import Flask, abort, jsonify, render_template, request
 
 from .config import DATA_DIR
-from .store import DB_PATH, MIGRATIONS, POST_MIGRATION_INDEXES, SCHEMA, dedupe_key
+from .store import (
+    DB_PATH, MIGRATIONS, POST_APPLIED_STATUSES, POST_MIGRATION_INDEXES,
+    SCHEMA, STATUSES, add_followup, dedupe_key, quiet_days,
+    set_status as store_set_status,
+)
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
-VALID_STATUSES = {"pending", "visited", "applied", "dismissed"}
+VALID_STATUSES = STATUSES
 
 
 def _age_limits() -> tuple[int, dict[str, int]]:
@@ -26,6 +30,16 @@ def _age_limits() -> tuple[int, dict[str, int]]:
         return int(s.max_age_days), dict(s.ats_max_age_days)
     except Exception:
         return 0, {}
+
+
+def _followup_threshold() -> int:
+    """Days of silence before an open application is flagged for a follow-up.
+    Fail closed to the default rather than erroring the pipeline view."""
+    try:
+        from .config import load_settings
+        return int(load_settings().followup_after_days)
+    except Exception:
+        return 10
 
 
 def _connect() -> sqlite3.Connection:
@@ -103,7 +117,9 @@ def create_app() -> Flask:
     @app.get("/api/postings")
     def list_postings():
         min_score = int(request.args.get("min_score", 0))
-        statuses = request.args.getlist("status") or ["pending", "visited", "applied"]
+        statuses = request.args.getlist("status") or [
+            "pending", "visited", "applied", "interview", "offer",
+        ]
         q = request.args.get("q", "").strip().lower()
 
         if not DB_PATH.exists():
@@ -205,14 +221,65 @@ def create_app() -> Flask:
                 "warning": "status column not yet available — will persist after next scan completes",
             }), 202
         with _connect() as con:
+            ok = store_set_status(con, fingerprint, status)
+            con.commit()
+        if not ok:
+            abort(404)
+        return jsonify({"fingerprint": fingerprint, "status": status})
+
+    @app.post("/api/postings/<fingerprint>/followup")
+    def log_followup(fingerprint: str):
+        if "followups" not in _existing_columns():
+            abort(503, "followups column not yet migrated — run a scan first")
+        with _connect() as con:
+            dates = add_followup(con, fingerprint)
+            con.commit()
+        if dates is None:
+            abort(404)
+        return jsonify({"fingerprint": fingerprint, "followups": dates})
+
+    @app.post("/api/postings/<fingerprint>/notes")
+    def set_notes(fingerprint: str):
+        if "notes" not in _existing_columns():
+            abort(503, "notes column not yet migrated — run a scan first")
+        notes = str((request.get_json(silent=True) or {}).get("notes", ""))
+        with _connect() as con:
             cur = con.execute(
-                "UPDATE postings SET status = ? WHERE fingerprint = ?",
-                (status, fingerprint),
+                "UPDATE postings SET notes = ? WHERE fingerprint = ?",
+                (notes, fingerprint),
             )
             con.commit()
-            if cur.rowcount == 0:
-                abort(404)
-        return jsonify({"fingerprint": fingerprint, "status": status})
+        if cur.rowcount == 0:
+            abort(404)
+        return jsonify({"fingerprint": fingerprint, "notes": notes})
+
+    @app.get("/api/pipeline")
+    def pipeline():
+        """Everything at or past 'applied', with quiet-day math done here so
+        the dashboard and the daily report can never disagree."""
+        threshold = _followup_threshold()
+        # Past 3x the threshold (or two silent follow-ups) an application is
+        # treated as ghosted: suggest recording no_response, not another note.
+        stale_after = threshold * 3
+        cols = _existing_columns()
+        if not DB_PATH.exists() or "applied_at" not in cols:
+            return jsonify({"threshold": threshold, "stale_after": stale_after, "rows": []})
+        qs = ",".join("?" * len(POST_APPLIED_STATUSES))
+        with _connect() as con:
+            rows = con.execute(
+                f"SELECT * FROM postings WHERE status IN ({qs})",
+                POST_APPLIED_STATUSES,
+            ).fetchall()
+            out = []
+            for r in rows:
+                d = _row_to_dict(r)
+                d["quiet_days"] = quiet_days(r)
+                try:
+                    d["followups"] = json.loads(d.get("followups") or "[]")
+                except (json.JSONDecodeError, TypeError):
+                    d["followups"] = []
+                out.append(d)
+        return jsonify({"threshold": threshold, "stale_after": stale_after, "rows": out})
 
     @app.get("/api/stats")
     def stats():

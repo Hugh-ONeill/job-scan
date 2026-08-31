@@ -129,6 +129,12 @@ aggregators:
   # Cap postings pulled per source per run (keeps the daily scoring load sane).
   max_per_source: 200
 
+# Days of silence before an open application (applied/interview) is flagged
+# for a follow-up — in the dashboard's pipeline panel and the daily report.
+# Standard practice: a brief, polite follow-up after 1-2 weeks, at most twice;
+# after two silent follow-ups the dashboard suggests recording no_response.
+followup_after_days: 10
+
 # Top N matches highlighted at the top of the report and in notify-send.
 top_n: 10
 

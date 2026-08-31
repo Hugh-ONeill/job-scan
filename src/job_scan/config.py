@@ -75,6 +75,10 @@ class Settings:
     # boards keep live reqs open far longer than startup ATSs). A value of 0
     # disables the age filter for that ATS.
     ats_max_age_days: dict[str, int] = field(default_factory=dict)
+    # Days of silence before an open application (applied/interview) is flagged
+    # as needing a follow-up. Standard practice is a brief, polite follow-up
+    # after one to two weeks, at most twice.
+    followup_after_days: int = 10
 
 
 @dataclass
@@ -168,6 +172,7 @@ def load_settings() -> Settings:
         ats_max_age_days={
             str(k): int(v) for k, v in (raw.get("ats_max_age_days") or {}).items()
         },
+        followup_after_days=int(raw.get("followup_after_days", 10)),
     )
 
 

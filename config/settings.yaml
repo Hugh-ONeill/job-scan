@@ -104,6 +104,10 @@ aggregators:
   remoteok: true          # remoteok.com/api (remote)
   remotive: true          # remotive.com remote jobs
   weworkremotely: true    # WWR programming RSS feeds (thin descriptions)
+  freehire: true          # freehire.me public REST API (tech-focused, full descriptions)
+  freehire_days: 7        # server-side freshness window (posted_within_days)
+  freehire_countries:     # country facet, ISO codes ("us", not "United States")
+    - us
   # Search terms for sources with server-side search (Remotive). Other sources
   # are filtered by the title rules in filters.yaml.
   queries:

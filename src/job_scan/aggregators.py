@@ -31,6 +31,7 @@ def fetch_aggregators(agg: Aggregators) -> list[Posting]:
         ("remoteok", agg.remoteok, _remoteok),
         ("remotive", agg.remotive, _remotive),
         ("weworkremotely", agg.weworkremotely, _weworkremotely),
+        ("freehire", agg.freehire, _freehire),
     ]
     for name, enabled, fn in sources:
         if not enabled:
@@ -141,6 +142,52 @@ def _remotive(agg: Aggregators) -> list[Posting]:
                 url=j.get("url", ""),
                 description=html_to_markdown(j.get("description", "")),
                 posted_at=normalize_date(j.get("publication_date")),
+            )
+    return list(seen.values())
+
+
+def _freehire(agg: Aggregators) -> list[Posting]:
+    """freehire.me tech-job aggregator — public REST API, JSON, no key.
+
+    The /agent/jobs/search variant hydrates each hit's full description
+    server-side (asked for as markdown), so one request per query reads every
+    result without a follow-up detail call per hit.
+    """
+    seen: dict[str, Posting] = {}
+    for term in agg.queries:
+        params: list[tuple[str, str]] = [
+            ("q", term),
+            ("limit", str(min(agg.max_per_source, 100))),
+            ("semantic_ratio", "0"),  # keyword search; the semantic index is opt-in
+            ("include_description", "true"),
+            ("description_format", "markdown"),
+            ("posted_within_days", str(agg.freehire_days)),
+        ]
+        # Repeated ?countries=<iso> params; the facet vocabulary is ISO codes.
+        params += [("countries", c) for c in agg.freehire_countries]
+        env = requests.get(
+            "https://freehire.me/api/v1/agent/jobs/search",
+            params=params, headers=UA, timeout=TIMEOUT,
+        ).json()
+        for j in env.get("data", []) or []:
+            slug = str(j.get("public_slug") or "")
+            if not slug or slug in seen:
+                continue
+            loc = j.get("location") or ""
+            if (j.get("work_mode") or "").lower() == "remote":
+                loc = f"Remote · {loc}" if loc and loc.lower() != "remote" else "Remote"
+            seen[slug] = Posting(
+                company=j.get("company") or "(freehire)",
+                ats="freehire",
+                slug="freehire",
+                posting_id=slug,
+                title=(j.get("title") or "").strip(),
+                location=loc,
+                url=j.get("url") or f"https://freehire.me/jobs/{slug}",
+                # Already markdown per description_format; html_to_markdown is a
+                # no-op on tag-free text and cleans up if HTML slips through.
+                description=html_to_markdown(j.get("description") or ""),
+                posted_at=normalize_date(j.get("posted_at") or j.get("created_at")),
             )
     return list(seen.values())
 

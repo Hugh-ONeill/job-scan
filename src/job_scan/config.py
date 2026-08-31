@@ -104,6 +104,15 @@ class Aggregators:
     remoteok: bool = True
     remotive: bool = True
     weworkremotely: bool = True
+    freehire: bool = True
+    # Server-side freshness window for freehire (posted_within_days). The API
+    # indexes multi-market volume, so a tight window keeps the pull relevant.
+    freehire_days: int = 7
+    # Country facet, ISO codes (verified live: "United States"/"USA" match
+    # nothing, "us" works). Empty list = no country filter — but the index is
+    # heavily international, so unfiltered pulls waste most of the per-query
+    # limit on roles the location filters reject anyway.
+    freehire_countries: list[str] = field(default_factory=lambda: ["us"])
     # Search terms for sources that support server-side search (Remotive, HN
     # filtering). Also used to filter free-text sources client-side.
     queries: list[str] = field(default_factory=lambda: [
@@ -199,6 +208,9 @@ def load_aggregators() -> Aggregators:
         remoteok=bool(a.get("remoteok", defaults.remoteok)),
         remotive=bool(a.get("remotive", defaults.remotive)),
         weworkremotely=bool(a.get("weworkremotely", defaults.weworkremotely)),
+        freehire=bool(a.get("freehire", defaults.freehire)),
+        freehire_days=int(a.get("freehire_days", defaults.freehire_days)),
+        freehire_countries=list(a.get("freehire_countries", defaults.freehire_countries) or []),
         queries=list(a.get("queries") or defaults.queries),
         max_per_source=int(a.get("max_per_source", defaults.max_per_source)),
     )

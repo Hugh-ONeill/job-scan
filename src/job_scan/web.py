@@ -239,8 +239,14 @@ def create_app() -> Flask:
                 elif s >= 70: buckets["70-79"] += 1
                 elif s >= 60: buckets["60-69"] += 1
                 else: buckets["<60"] += 1
+            # Postings collected while the LLM was unavailable (defer mode) —
+            # invisible to every score cutoff until rescore fills them in.
+            unscored = con.execute(
+                "SELECT COUNT(*) FROM postings WHERE score IS NULL"
+            ).fetchone()[0]
             total = sum(by_status.values())
-        return jsonify({"total": total, "by_status": by_status, "by_score_bucket": buckets})
+        return jsonify({"total": total, "by_status": by_status,
+                        "by_score_bucket": buckets, "unscored": unscored})
 
     return app
 

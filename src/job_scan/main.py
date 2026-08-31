@@ -18,13 +18,16 @@ from .config import (
 from .filter import passes
 from .interview_style import load_no_whiteboard
 from .matcher import combine, freshness_days, score_posting
-from .report import Scored, notify, notify_failure, write_report
+from .report import Scored, notify, notify_deferred, notify_failure, write_report
 from .resume import load_resume_text
 from .scrapers.base import Posting, fetch_all
 from .scrapers import (
     fetch_ashby, fetch_greenhouse, fetch_lever, fetch_smartrecruiters, fetch_workday,
 )
-from .store import connect, filter_new, mark_liveness, mark_notified, record_scored, touch_seen
+from .store import (
+    connect, count_unscored, filter_new, mark_liveness, mark_notified,
+    record_scored, record_unscored, touch_seen,
+)
 
 WEB_HOST = "127.0.0.1"
 WEB_PORT = 8765
@@ -43,6 +46,17 @@ def setup_logging(verbose: bool) -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+
+
+def _ollama_up(host: str) -> bool:
+    """Cheap reachability probe so a run without the GPU/model degrades to
+    collect-only instead of burning a retry cycle per posting."""
+    import requests
+    try:
+        requests.get(f"{host}/api/tags", timeout=5).raise_for_status()
+        return True
+    except Exception:
+        return False
 
 
 def cmd_probe(args: argparse.Namespace) -> int:
@@ -130,16 +144,29 @@ def cmd_run(args: argparse.Namespace) -> int:
         new_postings = [p for p in filtered if p.fingerprint in new_fps]
         log.info("new (not previously scored): %d", len(new_postings))
 
-        if args.limit:
-            new_postings = new_postings[: args.limit]
-            log.info("limited to %d for this run", len(new_postings))
-        elif len(new_postings) > settings.max_score_per_run:
-            log.info("capping at max_score_per_run=%d", settings.max_score_per_run)
-            new_postings = new_postings[: settings.max_score_per_run]
+        # Collect-only mode: no LLM available (GPU out for repair, Ollama down)
+        # or explicitly requested. Record every new posting unscored — no cap,
+        # since inserting rows is free — and let `rescore --unscored-only`
+        # sweep them when the model is back.
+        defer = args.no_llm or not _ollama_up(settings.ollama.host)
+        if defer:
+            reason = "--no-llm" if args.no_llm else f"Ollama unreachable at {settings.ollama.host}"
+            log.warning("scoring deferred (%s): recording %d postings unscored",
+                        reason, len(new_postings))
+            for p in new_postings:
+                record_unscored(con, p)
+            backlog = count_unscored(con)
+        else:
+            if args.limit:
+                new_postings = new_postings[: args.limit]
+                log.info("limited to %d for this run", len(new_postings))
+            elif len(new_postings) > settings.max_score_per_run:
+                log.info("capping at max_score_per_run=%d", settings.max_score_per_run)
+                new_postings = new_postings[: settings.max_score_per_run]
 
         scored: list[Scored] = []
         failed = 0
-        for i, p in enumerate(new_postings, 1):
+        for i, p in enumerate([] if defer else new_postings, 1):
             log.info("[%d/%d] scoring %s | %s", i, len(new_postings), p.company, p.title)
             try:
                 m = score_posting(settings.ollama, resume, p, settings.scoring,
@@ -159,8 +186,17 @@ def cmd_run(args: argparse.Namespace) -> int:
                 interview_style=m.interview_style,
             )
 
-    report_path = write_report(scored, settings)
+    report_path = write_report(scored, settings,
+                               deferred=len(new_postings) if defer else 0)
     log.info("report written: %s", report_path)
+
+    if defer:
+        if not args.no_notify:
+            notify_deferred(len(new_postings), backlog)
+        print(f"\nDone. {len(new_postings)} postings collected, not scored "
+              f"({backlog} unscored total). Report: {report_path}")
+        print("Run `job-scan rescore --unscored-only` once Ollama is back.")
+        return 0
 
     if not args.no_notify:
         notify(scored, settings, report_path)
@@ -241,9 +277,10 @@ def cmd_rescore(args: argparse.Namespace) -> int:
     no_whiteboard = load_no_whiteboard()
 
     with connect() as con:
+        where = "WHERE score IS NULL " if args.unscored_only else ""
         rows = con.execute(
             "SELECT fingerprint, company, title, url, location, description, "
-            "posted_at, first_seen FROM postings ORDER BY first_seen DESC"
+            f"posted_at, first_seen FROM postings {where}ORDER BY first_seen DESC"
         ).fetchall()
         if args.limit:
             rows = rows[: args.limit]
@@ -390,6 +427,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--no-aggregators", action="store_true", help="skip cross-company aggregators")
     run.add_argument("--no-notify", action="store_true", help="skip notify-send")
     run.add_argument("--no-open", action="store_true", help="skip auto-opening the dashboard")
+    run.add_argument("--no-llm", action="store_true",
+                     help="collect + dedup only, defer scoring (also automatic when Ollama is unreachable)")
     run.set_defaults(func=cmd_run)
 
     probe = sub.add_parser("probe", help="test an ATS+slug combo")
@@ -401,6 +440,8 @@ def main(argv: list[str] | None = None) -> int:
 
     rescore = sub.add_parser("rescore", help="re-score stored postings under the current mechanism")
     rescore.add_argument("--limit", type=int, help="cap postings re-scored (for testing)")
+    rescore.add_argument("--unscored-only", action="store_true",
+                         help="only score postings collected while the LLM was unavailable")
     rescore.set_defaults(func=cmd_rescore)
 
     recompute = sub.add_parser("recompute", help="recombine stored sub-scores under current config (no LLM)")

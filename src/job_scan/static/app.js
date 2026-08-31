@@ -238,6 +238,8 @@ async function loadStats() {
     `<span class="pill">80–89: ${bk["80-89"] ?? 0}</span>`,
     `<span class="pill">70–79: ${bk["70-79"] ?? 0}</span>`,
     `<span class="pill">60–69: ${bk["60-69"] ?? 0}</span>`,
+    // Only present while a scoring backlog exists (LLM was unavailable).
+    ...(s.unscored ? [`<span class="pill warn">⏳ ${s.unscored} unscored</span>`] : []),
   ].join("");
 }
 

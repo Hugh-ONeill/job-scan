@@ -40,8 +40,15 @@ def _collapse(scored: list[Scored]) -> list[Scored]:
     return list(best.values())
 
 
-def render_markdown(scored: list[Scored], settings: Settings) -> str:
+def render_markdown(scored: list[Scored], settings: Settings, deferred: int = 0) -> str:
     today = date.today().isoformat()
+    if deferred:
+        return (
+            f"# job-scan {today}\n\n"
+            f"Collected **{deferred}** new postings but scoring was deferred "
+            f"(LLM unavailable). They are stored unscored — run "
+            f"`job-scan rescore --unscored-only` once Ollama is back.\n"
+        )
     if not scored:
         return f"# job-scan {today}\n\nNo new postings cleared filters today.\n"
 
@@ -121,11 +128,27 @@ def _entry(s: Scored, compact: bool = False) -> list[str]:
     return body
 
 
-def write_report(scored: list[Scored], settings: Settings) -> str:
+def write_report(scored: list[Scored], settings: Settings, deferred: int = 0) -> str:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     path = REPORTS_DIR / f"{date.today().isoformat()}.md"
-    path.write_text(render_markdown(scored, settings))
+    path.write_text(render_markdown(scored, settings, deferred=deferred))
     return str(path)
+
+
+def notify_deferred(collected: int, backlog: int) -> None:
+    """Low-urgency note that today's run only collected (no scoring). Not the
+    critical notify_failure alert — deferral is expected while the GPU is out."""
+    if not shutil.which("notify-send"):
+        return
+    subprocess.run(
+        [
+            "notify-send", "-u", "low", "-a", "job-scan",
+            f"job-scan: collected {collected}, scoring deferred",
+            f"{backlog} postings await scoring — `job-scan rescore --unscored-only` "
+            f"once Ollama is back.",
+        ],
+        check=False,
+    )
 
 
 def notify_failure(failed: int, attempted: int) -> None:

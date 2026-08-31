@@ -57,6 +57,11 @@ h1 {
   border: 1px solid var(--border);
 }
 
+.stats .pill.warn {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
 .controls {
   display: flex;
   gap: 18px;

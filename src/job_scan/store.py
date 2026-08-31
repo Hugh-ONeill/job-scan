@@ -181,6 +181,29 @@ def record_scored(
     )
 
 
+def record_unscored(con: sqlite3.Connection, posting) -> None:
+    """Insert a fetched posting with no score (LLM unavailable at scan time).
+
+    The row enters dedup immediately — the next run's filter_new skips it, so
+    nothing is fetched or queued twice — but score stays NULL, which keeps it
+    below every dashboard cutoff until `rescore --unscored-only` fills it in.
+    """
+    now = _now()
+    con.execute(
+        """INSERT INTO postings
+           (fingerprint, company, title, url, location, description,
+            posted_at, status, first_seen, last_seen, notified)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, 0)
+           ON CONFLICT(fingerprint) DO NOTHING""",
+        (posting.fingerprint, posting.company, posting.title, posting.url,
+         posting.location, posting.description, posting.posted_at, now, now),
+    )
+
+
+def count_unscored(con: sqlite3.Connection) -> int:
+    return con.execute("SELECT COUNT(*) FROM postings WHERE score IS NULL").fetchone()[0]
+
+
 # ATS sources whose boards are authoritative about liveness (a removed job is
 # simply absent from the API). Aggregator feeds (HN/RemoteOK/...) are partial and
 # rolling, so we never auto-mark their postings gone.

@@ -9,8 +9,8 @@ from flask import Flask, abort, jsonify, render_template, request
 
 from .config import DATA_DIR
 from .store import (
-    DB_PATH, MIGRATIONS, POST_APPLIED_STATUSES, POST_MIGRATION_INDEXES,
-    SCHEMA, STATUSES, add_followup, dedupe_key, quiet_days,
+    DB_PATH, POST_APPLIED_STATUSES, SCHEMA, STATUSES, add_followup,
+    dedupe_key, quiet_days, _apply_migrations as apply_migrations,
     set_status as store_set_status,
 )
 
@@ -61,11 +61,10 @@ def _try_ensure_schema() -> None:
     try:
         with _connect() as con:
             con.executescript(SCHEMA)
-            existing = {row["name"] for row in con.execute("PRAGMA table_info(postings)")}
-            for col, ddl in MIGRATIONS:
-                if col not in existing:
-                    con.execute(ddl)
-            con.executescript(POST_MIGRATION_INDEXES)
+            # Share store's migration path rather than re-implementing it here:
+            # a second copy silently misses whatever the first one grows (the
+            # applied_at backfill was lost exactly that way).
+            apply_migrations(con)
             con.commit()
         _migration_applied = True
     except sqlite3.OperationalError:

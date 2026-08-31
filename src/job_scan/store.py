@@ -88,20 +88,28 @@ def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+# Data backfills, run on every connect rather than only when a column is first
+# added: tying them to column creation makes them silently skippable (a caller
+# that adds the column its own way loses the backfill), and each is written to
+# be idempotent so repeating it is free.
+BACKFILLS = [
+    # Rows already 'applied' predate applied_at; their real submission date was
+    # never recorded, so seed the quiet-clock with first_seen. A proxy, usually
+    # a few days early, which only makes the follow-up nudge err on the prompt
+    # side. The NULL guard keeps it from ever overwriting a real date.
+    "UPDATE postings SET applied_at = first_seen "
+    "WHERE applied_at IS NULL AND status IN ('applied', 'interview', 'offer')",
+]
+
+
 def _apply_migrations(con: sqlite3.Connection) -> None:
     existing = {row["name"] for row in con.execute("PRAGMA table_info(postings)")}
     for col, ddl in MIGRATIONS:
         if col not in existing:
             con.execute(ddl)
-            if col == "applied_at":
-                # Rows already 'applied' predate the column; the real apply
-                # date was never recorded, so seed the quiet-clock with
-                # first_seen (a proxy — typically a few days early, which only
-                # makes the follow-up nudge err on the prompt side).
-                con.execute(
-                    "UPDATE postings SET applied_at = first_seen WHERE status = 'applied'"
-                )
     con.executescript(POST_MIGRATION_INDEXES)
+    for sql in BACKFILLS:
+        con.execute(sql)
 
 
 @contextmanager

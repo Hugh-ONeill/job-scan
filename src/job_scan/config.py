@@ -113,6 +113,15 @@ class Aggregators:
     # heavily international, so unfiltered pulls waste most of the per-query
     # limit on roles the location filters reject anyway.
     freehire_countries: list[str] = field(default_factory=lambda: ["us"])
+    # LinkedIn public jobs-guest endpoints. Off by default: automated access is
+    # against LinkedIn ToS, so enabling it is an explicit personal-use choice —
+    # and the knobs below exist to keep the volume low (see linkedin.py).
+    linkedin: bool = False
+    linkedin_locations: list[str] = field(default_factory=lambda: [
+        "New Jersey, United States", "New York City Metropolitan Area",
+    ])
+    linkedin_days: int = 2          # f_TPR window: only postings this fresh
+    linkedin_max_details: int = 25  # detail pages fetched per run (new postings only)
     # Search terms for sources that support server-side search (Remotive, HN
     # filtering). Also used to filter free-text sources client-side.
     queries: list[str] = field(default_factory=lambda: [
@@ -211,6 +220,10 @@ def load_aggregators() -> Aggregators:
         freehire=bool(a.get("freehire", defaults.freehire)),
         freehire_days=int(a.get("freehire_days", defaults.freehire_days)),
         freehire_countries=list(a.get("freehire_countries", defaults.freehire_countries) or []),
+        linkedin=bool(a.get("linkedin", defaults.linkedin)),
+        linkedin_locations=list(a.get("linkedin_locations") or defaults.linkedin_locations),
+        linkedin_days=int(a.get("linkedin_days", defaults.linkedin_days)),
+        linkedin_max_details=int(a.get("linkedin_max_details", defaults.linkedin_max_details)),
         queries=list(a.get("queries") or defaults.queries),
         max_per_source=int(a.get("max_per_source", defaults.max_per_source)),
     )

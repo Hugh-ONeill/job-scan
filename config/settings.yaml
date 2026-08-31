@@ -108,6 +108,17 @@ aggregators:
   freehire_days: 7        # server-side freshness window (posted_within_days)
   freehire_countries:     # country facet, ISO codes ("us", not "United States")
     - us
+  # LinkedIn public jobs-guest endpoints (unauthenticated HTML). Automated
+  # access is against LinkedIn ToS — this is enabled as a personal-use,
+  # low-volume source: one search page per query x location per run, detail
+  # pages only for postings not already in the DB, capped per run, with a
+  # pause between requests. Don't crank these knobs up.
+  linkedin: true
+  linkedin_locations:
+    - New Jersey, United States
+    - New York City Metropolitan Area
+  linkedin_days: 2          # only postings from the last N days (f_TPR)
+  linkedin_max_details: 25  # max detail pages fetched per run
   # Search terms for sources with server-side search (Remotive). Other sources
   # are filtered by the title rules in filters.yaml.
   queries:

@@ -105,7 +105,11 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     if not args.no_aggregators:
         t1 = time.monotonic()
-        agg_postings = fetch_aggregators(load_aggregators())
+        # Known fingerprints let LinkedIn skip detail-page fetches for
+        # postings already stored (its per-posting hydration cost).
+        with connect() as con:
+            known = {r["fingerprint"] for r in con.execute("SELECT fingerprint FROM postings")}
+        agg_postings = fetch_aggregators(load_aggregators(), known)
         log.info("fetched %d aggregator postings in %.1fs", len(agg_postings), time.monotonic() - t1)
         postings += agg_postings
 

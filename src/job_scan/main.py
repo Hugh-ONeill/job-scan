@@ -170,8 +170,9 @@ def cmd_run(args: argparse.Namespace) -> int:
 
         scored: list[Scored] = []
         failed = 0
-        for i, p in enumerate([] if defer else new_postings, 1):
-            log.info("[%d/%d] scoring %s | %s", i, len(new_postings), p.company, p.title)
+        to_score = [] if defer else new_postings
+        for i, p in enumerate(to_score, 1):
+            log.info("[%d/%d] scoring %s | %s", i, len(to_score), p.company, p.title)
             try:
                 m = score_posting(settings.ollama, resume, p, settings.scoring,
                                   settings.location_preference, no_whiteboard)
@@ -390,12 +391,13 @@ def cmd_gaps(args: argparse.Namespace) -> int:
     at what is really costing matches, rather than one posting's opinion.
     """
     import json
+    import sqlite3
     from collections import Counter
+
+    from .store import DB_PATH
 
     # Read-only: open the DB directly rather than through connect(), whose
     # schema/migration pass takes a write lock a running scan would block on.
-    import sqlite3
-    from .store import DB_PATH
     if not DB_PATH.exists():
         print("No database yet — run a scan first.")
         return 0

@@ -1,0 +1,56 @@
+# Vocabulary for `job-scan gaps`.
+#
+# The matcher's "concerns" bullets are free-text sentences, so counting them
+# verbatim finds nothing repeatable. Instead each term below is matched
+# case-insensitively against every concern bullet, and a posting counts once
+# per term however often it repeats it. The rollup answers: across the roles
+# that actually fit me, which gap keeps coming up?
+#
+# Each entry is `term: [patterns]` — regex alternatives, matched with a leading
+# word boundary. QUOTE every pattern: unquoted regex breaks the YAML parser on
+# '?', '[', '#' and friends. Keep patterns narrow — a bare "go" would match
+# "going", so it is spelled with its ecosystem instead. Add terms freely;
+# concerns matching nothing are simply not counted, so a missing term costs
+# coverage, never correctness.
+
+terms:
+  Kubernetes:    ['kubernetes', 'k8s', 'helm']
+  Docker:        ['docker', 'containeriz\w*']
+  AWS:           ['aws', 'amazon web services', 'ec2', 'lambda', 's3']
+  GCP:           ['gcp', 'google cloud']
+  Azure:         ['azure']
+  Terraform:     ['terraform', 'infrastructure as code', 'iac']
+  CI/CD:         ['ci/cd', 'cicd', 'continuous (?:integration|deployment)', 'jenkins', 'github actions']
+  Go:            ['golang', 'go\b(?= (?:lang|programming|experience|development))']
+  Rust:          ['rust']
+  Java:          ['java\b(?!script)']
+  Kotlin:        ['kotlin']
+  C++:           ['c\+\+', 'cpp']
+  C#/.NET:       ['c#', '\.net\b', 'dotnet']
+  Ruby:          ['ruby', 'rails']
+  PHP:           ['php', 'laravel']
+  Scala:         ['scala']
+  Elixir:        ['elixir', 'erlang']
+  TypeScript:    ['typescript']
+  React:         ['react(?:\.js)?\b']
+  Vue:           ['vue(?:\.js)?\b']
+  Angular:       ['angular']
+  Next.js:       ['next\.js', 'nextjs']
+  GraphQL:       ['graphql']
+  Kafka:         ['kafka', 'event streaming', 'pub/sub']
+  Spark:         ['spark', 'hadoop', 'databricks']
+  Airflow:       ['airflow', 'dagster', 'dbt\b']
+  ETL/pipelines: ['etl\b', 'data pipeline\w*', 'data engineering']
+  ML/modeling:   ['machine learning', 'ml\b', 'deep learning', 'pytorch', 'tensorflow', 'model training']
+  LLM/AI:        ['llm', 'large language model', 'genai', 'generative ai', 'prompt engineering', 'rag\b', 'embedding']
+  MLOps:         ['mlops', 'model deployment', 'feature store']
+  SRE/infra:     ['sre\b', 'site reliability', 'observability', 'prometheus', 'grafana', 'datadog', 'on-call']
+  Security:      ['security clearance', 'cryptograph\w*', 'penetration test\w*', 'appsec', 'infosec']
+  Distributed:   ['distributed systems', 'microservice\w*', 'scalab\w*', 'high[- ]throughput', 'low[- ]latency']
+  Databases:     ['postgres\w*', 'mysql', 'mongodb', 'redis', 'cassandra', 'dynamodb', 'database (?:design|optimiz)']
+  Mobile:        ['ios\b', 'android', 'swift\b', 'react native', 'flutter', 'mobile development']
+  Embedded:      ['embedded', 'firmware', 'rtos', 'kernel']
+  Testing:       ['test automation', 'unit test\w*', 'integration test\w*', 'tdd\b', 'pytest', 'jest\b', 'cypress']
+  Seniority:     ['years of experience', 'more experience', 'senior[- ]level', 'staff[- ]level', 'lead experience', 'over[- ]?qualified', 'under[- ]?qualified']
+  Domain:        ['domain (?:knowledge|expertise|experience)', 'industry experience', 'fintech', 'healthcare', 'biotech', 'insurance']
+  Leadership:    ['mentor\w*', 'tech lead', 'leading a team', 'people management', 'architect\w*']

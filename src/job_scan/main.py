@@ -12,8 +12,8 @@ import time
 
 from .aggregators import fetch_aggregators
 from .config import (
-    Company, load_aggregators, load_companies, load_filters,
-    load_no_whiteboard_companies, load_settings,
+    CONFIG_DIR, Company, load_aggregators, load_companies, load_filters,
+    load_gap_vocabulary, load_no_whiteboard_companies, load_settings,
 )
 from .filter import passes
 from .interview_style import load_no_whiteboard
@@ -382,6 +382,74 @@ def cmd_recompute(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_gaps(args: argparse.Namespace) -> int:
+    """Tally recurring concerns across high-scoring postings — no LLM.
+
+    Every scored posting already stores the model's concern bullets. Rolled up
+    over the roles that actually fit (score >= --min-score), the repeats point
+    at what is really costing matches, rather than one posting's opinion.
+    """
+    import json
+    from collections import Counter
+
+    # Read-only: open the DB directly rather than through connect(), whose
+    # schema/migration pass takes a write lock a running scan would block on.
+    import sqlite3
+    from .store import DB_PATH
+    if not DB_PATH.exists():
+        print("No database yet — run a scan first.")
+        return 0
+    con = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, timeout=5.0)
+    con.row_factory = sqlite3.Row
+    try:
+        rows = con.execute(
+            "SELECT concerns FROM postings WHERE score >= ? AND concerns IS NOT NULL "
+            "AND COALESCE(gone, 0) = 0",
+            (args.min_score,),
+        ).fetchall()
+    finally:
+        con.close()
+
+    # Concerns are free-text sentences, so exact-match counting finds nothing.
+    # Count keyword hits instead: a curated vocabulary of the skills/tools that
+    # actually show up as gaps, matched case-insensitively on word boundaries.
+    vocab = load_gap_vocabulary()
+    counts: Counter[str] = Counter()
+    examples: dict[str, str] = {}
+    n_concerns = 0
+    for r in rows:
+        try:
+            concerns = json.loads(r["concerns"]) or []
+        except json.JSONDecodeError:
+            continue
+        # One posting counts once per term, however often it repeats it.
+        hits: set[str] = set()
+        for c in concerns:
+            n_concerns += 1
+            for term, pattern in vocab.items():
+                if pattern.search(c):
+                    hits.add(term)
+                    examples.setdefault(term, c)
+        counts.update(hits)
+
+    total = len(rows)
+    if not total:
+        print(f"No scored postings at or above {args.min_score}.")
+        return 0
+
+    print(f"\nSkill gaps across {total} postings scoring >= {args.min_score} "
+          f"({n_concerns} concern bullets)\n")
+    width = max((len(t) for t, _ in counts.most_common(args.top)), default=10)
+    for term, n in counts.most_common(args.top):
+        pct = 100 * n / total
+        bar = "█" * round(pct / 2)
+        print(f"  {term:<{width}}  {n:>4} ({pct:4.1f}%)  {bar}")
+        if args.verbose and term in examples:
+            print(f"  {'':<{width}}        e.g. {examples[term][:100]}")
+    print(f"\nVocabulary: {CONFIG_DIR / 'gap_terms.yaml'} — add terms it misses.\n")
+    return 0
+
+
 def cmd_resolve_nw(args: argparse.Namespace) -> int:
     """Resolve the hiring-without-whiteboards list to scannable ATS companies."""
     from .resolve_companies import resolve_all, write_yaml
@@ -468,6 +536,12 @@ def main(argv: list[str] | None = None) -> int:
 
     prune = sub.add_parser("prune", help="re-fetch boards and hide postings with dead links (no scoring)")
     prune.set_defaults(func=cmd_prune)
+
+    gaps = sub.add_parser("gaps", help="tally recurring skill gaps across good matches (no LLM)")
+    gaps.add_argument("--min-score", type=int, default=75,
+                      help="only count postings scoring at least this (default 75)")
+    gaps.add_argument("--top", type=int, default=20, help="terms to show (default 20)")
+    gaps.set_defaults(func=cmd_gaps)
 
     serve = sub.add_parser("serve", help="run the dashboard web server")
     serve.add_argument("--host", default=WEB_HOST)

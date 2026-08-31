@@ -1,11 +1,14 @@
 """Load and validate config files."""
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
+
+log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = ROOT / "config"
@@ -211,6 +214,28 @@ def load_no_whiteboard_companies() -> list[Company]:
         return []
     raw = yaml.safe_load(path.read_text()) or {}
     return [_company(e, priority=False) for e in raw.get("companies", []) or []]
+
+
+def load_gap_vocabulary() -> dict[str, "re.Pattern[str]"]:
+    """Compile config/gap_terms.yaml into {term: compiled alternation}.
+
+    Patterns are joined with | and wrapped in word boundaries, so a term's
+    alternatives all match whole words. An entry whose regex doesn't compile is
+    skipped with a warning rather than killing the whole rollup.
+    """
+    import re
+    path = CONFIG_DIR / "gap_terms.yaml"
+    if not path.exists():
+        return {}
+    raw = yaml.safe_load(path.read_text()) or {}
+    out: dict[str, re.Pattern[str]] = {}
+    for term, patterns in (raw.get("terms") or {}).items():
+        alternation = "|".join(f"(?:{p})" for p in patterns)
+        try:
+            out[str(term)] = re.compile(rf"\b(?:{alternation})", re.I)
+        except re.error as e:
+            log.warning("gap_terms.yaml: skipping %r (bad pattern: %s)", term, e)
+    return out
 
 
 def load_aggregators() -> Aggregators:

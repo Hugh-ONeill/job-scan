@@ -21,6 +21,7 @@ import time
 import requests
 
 from .config import Aggregators
+from .filter import passes
 from .scrapers.base import Posting, html_to_markdown, normalize_date
 
 log = logging.getLogger(__name__)
@@ -43,14 +44,25 @@ def _sleep() -> None:
     time.sleep(PAUSE + random.uniform(0, 0.7))
 
 
+# Set once a 429 is seen in a run, so the throttle is reported plainly at the
+# end instead of hiding inside per-request retries.
+_throttled = False
+
+
 def _get(url: str, params: dict) -> str:
     """GET with exponential backoff on 429/5xx. Returns "" on a 404."""
+    global _throttled
     delay = 1.0
     for attempt in range(5):
         r = requests.get(url, params=params, headers=HEADERS, timeout=TIMEOUT)
         if r.status_code == 404:
             return ""
         if r.status_code == 429 or r.status_code >= 500:
+            if r.status_code == 429:
+                _throttled = True
+                log.warning("linkedin returned 429 (attempt %d/5) — backing off %.0fs. "
+                            "If this repeats, lower linkedin_pages/locations in settings.yaml.",
+                            attempt + 1, delay)
             if attempt == 4:
                 r.raise_for_status()
             time.sleep(delay + random.uniform(0, 0.5))
@@ -156,30 +168,49 @@ def fetch_detail(job_id: str) -> dict | None:
 
 # --- source entry point -------------------------------------------------------
 
-def fetch_linkedin(agg: Aggregators, known_fps: set[str] | None = None) -> list[Posting]:
+PAGE_SIZE = 10  # cards per jobs-guest search response
+
+
+def fetch_linkedin(
+    agg: Aggregators,
+    known_fps: set[str] | None = None,
+    filters=None,
+) -> list[Posting]:
+    global _throttled
+    _throttled = False
     known = known_fps or set()
     cards: dict[str, dict] = {}
+    searches = 0
     for location in agg.linkedin_locations:
         for term in agg.queries:
-            try:
-                page = _get(SEARCH_URL, {
-                    "keywords": term,
-                    "location": location,
-                    # f_TPR = time-posted-range in seconds ("r172800" = 2 days).
-                    "f_TPR": f"r{agg.linkedin_days * 86400}",
-                    "start": "0",
-                })
-            except Exception as e:
-                log.warning("linkedin search failed (%s / %s): %s", term, location, e)
-                continue
-            for c in parse_cards(page):
-                cards.setdefault(c["id"], c)
-            _sleep()
-    log.info("linkedin: %d unique cards from %d searches",
-             len(cards), len(agg.linkedin_locations) * len(agg.queries))
+            # Paging is worth it: pages return near-disjoint results (verified
+            # 2026-08-31 — 38 unique across 4 pages), so page 1 alone was
+            # leaving ~75% of each query's matches unseen.
+            for page_no in range(agg.linkedin_pages):
+                try:
+                    page = _get(SEARCH_URL, {
+                        "keywords": term,
+                        "location": location,
+                        # f_TPR = time-posted-range in seconds ("r172800" = 2 days).
+                        "f_TPR": f"r{agg.linkedin_days * 86400}",
+                        "start": str(page_no * PAGE_SIZE),
+                    })
+                except Exception as e:
+                    log.warning("linkedin search failed (%s / %s p%d): %s",
+                                term, location, page_no + 1, e)
+                    break  # a failing query won't page any better
+                searches += 1
+                got = parse_cards(page)
+                for c in got:
+                    cards.setdefault(c["id"], c)
+                _sleep()
+                if len(got) < PAGE_SIZE:
+                    break  # short page = end of results for this query
+    log.info("linkedin: %d unique cards from %d searches", len(cards), searches)
 
     out: list[Posting] = []
     hydrated = 0
+    prefiltered = 0
     for c in cards.values():
         base = dict(
             company=c["company"] or "(LinkedIn)",
@@ -192,6 +223,14 @@ def fetch_linkedin(agg: Aggregators, known_fps: set[str] | None = None) -> list[
             # Already stored (description and all) — emit without a detail
             # fetch so touch_seen keeps its last_seen fresh.
             out.append(Posting(description="", **base))
+            continue
+        # A card already carries title and location, which is everything the
+        # pre-LLM filters read — so run them HERE, before paying for a detail
+        # page. Search returns far more cards than the per-run detail cap, and
+        # without this the cap gets spent on postings the filters would have
+        # thrown away seconds later.
+        if filters is not None and not passes(Posting(description="", **base), filters):
+            prefiltered += 1
             continue
         if hydrated >= agg.linkedin_max_details:
             # Dropped, not recorded: the next run's f_TPR window re-serves
@@ -207,5 +246,12 @@ def fetch_linkedin(agg: Aggregators, known_fps: set[str] | None = None) -> list[
         if d is None:
             continue  # 404 or no longer accepting applications
         out.append(Posting(description=d["description"], **base))
-    log.info("linkedin: %d postings (%d details fetched)", len(out), hydrated)
+    n_known = len(known & {f"linkedin:search:{c}" for c in cards})
+    capped = max(0, len(cards) - n_known - prefiltered - hydrated)
+    log.info("linkedin: %d postings — %d details fetched, %d already stored, "
+             "%d dropped by pre-filters, %d left by the detail cap",
+             len(out), hydrated, n_known, prefiltered, capped)
+    if _throttled:
+        log.warning("linkedin throttled this run (429s) — results may be partial; "
+                    "consider lowering linkedin_pages or linkedin_locations")
     return out

@@ -24,9 +24,14 @@ TIMEOUT = 30
 UA = {"User-Agent": "Mozilla/5.0 (job-scan)"}
 
 
-def fetch_aggregators(agg: Aggregators, known_fps: set[str] | None = None) -> list[Posting]:
-    """known_fps: fingerprints already stored, so sources that pay per-posting
-    hydration costs (LinkedIn detail pages) can skip what the DB already has."""
+def fetch_aggregators(
+    agg: Aggregators,
+    known_fps: set[str] | None = None,
+    filters=None,
+) -> list[Posting]:
+    """known_fps / filters exist for sources that pay a per-posting hydration
+    cost (LinkedIn detail pages): the first lets them skip what the DB already
+    has, the second lets them drop obvious misses before fetching."""
     from .linkedin import fetch_linkedin
 
     out: list[Posting] = []
@@ -36,7 +41,7 @@ def fetch_aggregators(agg: Aggregators, known_fps: set[str] | None = None) -> li
         ("remotive", agg.remotive, _remotive),
         ("weworkremotely", agg.weworkremotely, _weworkremotely),
         ("freehire", agg.freehire, _freehire),
-        ("linkedin", agg.linkedin, lambda a: fetch_linkedin(a, known_fps)),
+        ("linkedin", agg.linkedin, lambda a: fetch_linkedin(a, known_fps, filters)),
     ]
     for name, enabled, fn in sources:
         if not enabled:

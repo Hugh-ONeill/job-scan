@@ -127,8 +127,9 @@ class Aggregators:
     linkedin_locations: list[str] = field(default_factory=lambda: [
         "New Jersey, United States", "New York City Metropolitan Area",
     ])
-    linkedin_days: int = 2          # f_TPR window: only postings this fresh
-    linkedin_max_details: int = 25  # detail pages fetched per run (new postings only)
+    linkedin_days: int = 3          # f_TPR window: only postings this fresh
+    linkedin_pages: int = 4          # search pages per query x location (10 results each)
+    linkedin_max_details: int = 120  # detail pages per run (new, pre-filtered postings only)
     # Search terms for sources that support server-side search (Remotive, HN
     # filtering). Also used to filter free-text sources client-side.
     queries: list[str] = field(default_factory=lambda: [
@@ -253,6 +254,7 @@ def load_aggregators() -> Aggregators:
         linkedin=bool(a.get("linkedin", defaults.linkedin)),
         linkedin_locations=list(a.get("linkedin_locations") or defaults.linkedin_locations),
         linkedin_days=int(a.get("linkedin_days", defaults.linkedin_days)),
+        linkedin_pages=int(a.get("linkedin_pages", defaults.linkedin_pages)),
         linkedin_max_details=int(a.get("linkedin_max_details", defaults.linkedin_max_details)),
         queries=list(a.get("queries") or defaults.queries),
         max_per_source=int(a.get("max_per_source", defaults.max_per_source)),

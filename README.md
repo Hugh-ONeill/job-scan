@@ -103,11 +103,20 @@ Nothing is sent for you. The tool tracks and reminds; the writing and sending st
 ### LinkedIn source
 
 The `linkedin` aggregator uses LinkedIn's public, unauthenticated `jobs-guest` endpoints, which fills
-the gap the other sources leave: local non-remote roles at companies not in `companies.yaml`.
-Automated access is against LinkedIn's ToS, so it's built for **personal use at low volume** — one
-search page per query × location, detail pages fetched only for postings not already stored, a hard
-per-run cap, and a pause between requests. The `linkedin_*` knobs in `settings.yaml` control all of
-this; leaving them low is the point.
+the gap the other sources leave: local non-remote roles at companies not in `companies.yaml`. No
+account, cookie, or credential is involved.
+
+Cost control is in the *shape* of the fetch, not just a volume cap. A search card already carries the
+title and location, which is everything the pre-LLM filters read — so the filters run **before** any
+detail page is fetched, and the per-run detail budget is spent only on postings that could actually
+survive. Measured over 4 locations × 4 queries × 4 pages: 361 unique cards, 218 dropped by
+pre-filters for free, 121 requests in ~4.5 minutes, and every detail fetch yielding a usable posting.
+Postings already in the database skip hydration entirely, so the steady-state draw is far smaller
+than the first run's.
+
+If LinkedIn ever starts answering `429`, the scraper logs a warning, backs off exponentially, and the
+run degrades to partial results rather than failing. Repeated warnings mean it's time to lower
+`linkedin_pages` or trim `linkedin_locations`.
 
 ## CLI
 

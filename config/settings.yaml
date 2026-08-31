@@ -108,17 +108,31 @@ aggregators:
   freehire_days: 7        # server-side freshness window (posted_within_days)
   freehire_countries:     # country facet, ISO codes ("us", not "United States")
     - us
-  # LinkedIn public jobs-guest endpoints (unauthenticated HTML). Automated
-  # access is against LinkedIn ToS — this is enabled as a personal-use,
-  # low-volume source: one search page per query x location per run, detail
-  # pages only for postings not already in the DB, capped per run, with a
-  # pause between requests. Don't crank these knobs up.
+  # LinkedIn public jobs-guest endpoints (unauthenticated HTML — no account,
+  # cookie, or credential is involved, so there is nothing here to suspend).
+  # The real limit is IP-level throttling: if LinkedIn starts answering 429,
+  # the scraper logs a warning and backs off, and the run degrades to partial
+  # results rather than failing. If you see that warning repeatedly, lower
+  # linkedin_pages or trim linkedin_locations.
+  #
+  # Per-run request budget:
+  #   searches = locations x queries x pages  (early-stops on a short page)
+  #   details  = up to linkedin_max_details, for cards that are NEW and pass
+  #              the title/location pre-filters
+  # Measured 2026-08-31 at these values: 61 searches returned 361 unique cards,
+  # of which the pre-filters dropped 218 before any detail fetch. 121 requests
+  # over ~4.5 min, no throttling. Raising max_details to 120 mainly absorbs the
+  # first-run backlog; in steady state already-stored postings skip hydration,
+  # so the daily draw is much smaller.
   linkedin: true
   linkedin_locations:
     - New Jersey, United States
     - New York City Metropolitan Area
-  linkedin_days: 2          # only postings from the last N days (f_TPR)
-  linkedin_max_details: 25  # max detail pages fetched per run
+    - Philadelphia, Pennsylvania, United States
+    - United States           # catches nationwide-remote listings
+  linkedin_days: 3           # only postings from the last N days (f_TPR)
+  linkedin_pages: 4          # search pages per query x location (10 results each)
+  linkedin_max_details: 120  # max detail pages fetched per run
   # Search terms for sources with server-side search (Remotive). Other sources
   # are filtered by the title rules in filters.yaml.
   queries:

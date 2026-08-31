@@ -217,18 +217,32 @@ def set_status(con: sqlite3.Connection, fingerprint: str, status: str) -> bool:
     """Change a posting's status, stamping the lifecycle timestamps.
 
     applied_at is set once, on the first transition into 'applied'; later
-    stages keep it, since it anchors "days since I applied"."""
+    stages keep it, since it anchors "days since I applied".
+
+    Setting a status a posting ALREADY has is a no-op: status_updated_at feeds
+    the quiet-day clock as "when something last actually happened", so letting
+    a re-click of the current value stamp it would silently reset the clock and
+    hide a long-quiet application from the follow-up nudge.
+    """
+    row = con.execute(
+        "SELECT status FROM postings WHERE fingerprint = ?", (fingerprint,)
+    ).fetchone()
+    if row is None:
+        return False
+    if (row["status"] or "pending") == status:
+        return True  # found, nothing to change
+
     now = _now()
-    cur = con.execute(
+    con.execute(
         "UPDATE postings SET status = ?, status_updated_at = ? WHERE fingerprint = ?",
         (status, now, fingerprint),
     )
-    if cur.rowcount and status == "applied":
+    if status == "applied":
         con.execute(
             "UPDATE postings SET applied_at = ? WHERE fingerprint = ? AND applied_at IS NULL",
             (now, fingerprint),
         )
-    return cur.rowcount > 0
+    return True
 
 
 def add_followup(con: sqlite3.Connection, fingerprint: str) -> list[str] | None:

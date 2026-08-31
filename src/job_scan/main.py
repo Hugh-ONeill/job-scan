@@ -452,6 +452,88 @@ def cmd_gaps(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_applications(args: argparse.Namespace) -> int:
+    """List open applications and bulk-set their status — no LLM.
+
+    Built for triaging a backlog: most quiet applications resolve to the same
+    answer (`no_response`), with a handful of real rejections mixed in. Mark
+    the exceptions by number, then sweep the remainder with --rest.
+    """
+    import json
+
+    from .store import (
+        ACTIVE_APP_STATUSES, POST_APPLIED_STATUSES, STATUSES, quiet_days, set_status,
+    )
+
+    open_only = not args.all
+    statuses = ACTIVE_APP_STATUSES if open_only else POST_APPLIED_STATUSES
+
+    with connect() as con:
+        qs = ",".join("?" * len(statuses))
+        rows = con.execute(
+            f"SELECT * FROM postings WHERE status IN ({qs})", statuses
+        ).fetchall()
+        # Deterministic order so the printed numbers mean the same thing in the
+        # listing and the follow-up --set call: quietest first, id as tie-break.
+        listing = sorted(
+            rows,
+            key=lambda r: (-(quiet_days(r) or 0), r["fingerprint"]),
+        )
+
+        if not listing:
+            print("No open applications." if open_only else "No applications recorded.")
+            return 0
+
+        targets: list[int] = []
+        if args.set:
+            status, picks = args.set[0], args.set[1:]
+            if status not in STATUSES:
+                print(f"unknown status {status!r}; expected one of {sorted(STATUSES)}",
+                      file=sys.stderr)
+                return 2
+            if args.rest:
+                chosen = set(int(p) for p in picks)
+                targets = [i for i in range(1, len(listing) + 1) if i not in chosen]
+            else:
+                targets = [int(p) for p in picks]
+            bad = [n for n in targets if not 1 <= n <= len(listing)]
+            if bad:
+                print(f"out of range: {bad} (have 1-{len(listing)})", file=sys.stderr)
+                return 2
+            if not targets:
+                print("nothing selected", file=sys.stderr)
+                return 2
+            for n in targets:
+                set_status(con, listing[n - 1]["fingerprint"], status)
+            print(f"\nMarked {len(targets)} application(s) as {status}.\n")
+            # Re-read: statuses just changed, so the listing below reflects them.
+            rows = con.execute(
+                f"SELECT * FROM postings WHERE status IN ({qs})", statuses
+            ).fetchall()
+            listing = sorted(
+                rows, key=lambda r: (-(quiet_days(r) or 0), r["fingerprint"])
+            )
+            if not listing:
+                print("No open applications left.")
+                return 0
+
+    print(f"{'#':>3}  {'COMPANY':<24} {'ROLE':<44} {'STATUS':<11} {'APPLIED':<11} {'QUIET':>6}  FU")
+    print("-" * 112)
+    for i, r in enumerate(listing, 1):
+        q = quiet_days(r)
+        try:
+            n_fu = len(json.loads(r["followups"] or "[]"))
+        except (json.JSONDecodeError, TypeError):
+            n_fu = 0
+        print(f"{i:>3}  {(r['company'] or '')[:24]:<24} {(r['title'] or '')[:44]:<44} "
+              f"{(r['status'] or ''):<11} {str(r['applied_at'] or '')[:10]:<11} "
+              f"{(f'{q}d' if q is not None else '—'):>6}  {n_fu}")
+    print(f"\n{len(listing)} application(s). Mark them with, e.g.:")
+    print("  job-scan applications --set rejected 3 7")
+    print("  job-scan applications --set no_response --rest 3 7   # everything except 3 and 7")
+    return 0
+
+
 def cmd_resolve_nw(args: argparse.Namespace) -> int:
     """Resolve the hiring-without-whiteboards list to scannable ATS companies."""
     from .resolve_companies import resolve_all, write_yaml
@@ -538,6 +620,16 @@ def main(argv: list[str] | None = None) -> int:
 
     prune = sub.add_parser("prune", help="re-fetch boards and hide postings with dead links (no scoring)")
     prune.set_defaults(func=cmd_prune)
+
+    apps = sub.add_parser("applications", aliases=["apps"],
+                          help="list open applications and bulk-set their status (no LLM)")
+    apps.add_argument("--all", action="store_true",
+                      help="include already-resolved applications, not just open ones")
+    apps.add_argument("--set", nargs="+", metavar="ARG",
+                      help="STATUS N [N ...] — set those numbered rows to STATUS")
+    apps.add_argument("--rest", action="store_true",
+                      help="with --set: apply to every row EXCEPT the listed numbers")
+    apps.set_defaults(func=cmd_applications)
 
     gaps = sub.add_parser("gaps", help="tally recurring skill gaps across good matches (no LLM)")
     gaps.add_argument("--min-score", type=int, default=75,

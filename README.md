@@ -91,6 +91,17 @@ a third chase isn't the honest move.
 
 Nothing is sent for you. The tool tracks and reminds; the writing and sending stay yours.
 
+For triaging a backlog, the dropdowns are the wrong interface — most quiet applications resolve to the
+same answer. `job-scan applications` lists them numbered, and marks them in bulk:
+
+```bash
+job-scan applications                              # numbered list, quietest first
+job-scan applications --set rejected 3 7 12        # mark the real rejections
+job-scan applications --set no_response --rest     # sweep everything still open
+```
+
+Numbers refer to the listing immediately above, and the updated list reprints after every change.
+
 ## Configuration
 
 | File | Purpose |
@@ -128,6 +139,7 @@ run degrades to partial results rather than failing. Repeated warnings mean it's
 | `job-scan rescore`    | re-score stored postings under the current mechanism |
 | `job-scan rescore --unscored-only` | score only the backlog collected while the LLM was down |
 | `job-scan recompute`  | recombine stored sub-scores under current config (no LLM) |
+| `job-scan applications` | list open applications and bulk-set their status (no LLM) |
 | `job-scan gaps`       | tally recurring skill gaps across good matches (no LLM) |
 | `job-scan prune`      | re-fetch boards and hide postings with dead links |
 | `job-scan serve`      | run the dashboard web server |

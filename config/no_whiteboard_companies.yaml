@@ -20,9 +20,6 @@ companies:
 - name: B12
   ats: greenhouse
   slug: b12
-- name: Badoo
-  ats: lever
-  slug: bumbleinc
 - name: BrowserStack
   ats: workday
   slug: browserstack
@@ -37,6 +34,9 @@ companies:
 - name: Bustle
   ats: lever
   slug: BDG
+- name: Calendly
+  ats: greenhouse
+  slug: calendly
 - name: Civis Analytics
   ats: greenhouse
   slug: civisanalytics
@@ -58,9 +58,6 @@ companies:
 - name: Colonist
   ats: ashby
   slug: colonist
-- name: Contentful
-  ats: greenhouse
-  slug: contentful
 - name: ContentSquare
   ats: lever
   slug: contentsquare
@@ -85,9 +82,6 @@ companies:
 - name: Freetrade
   ats: ashby
   slug: freetrade
-- name: Gcore
-  ats: smartrecruiters
-  slug: Gcore
 - name: Goalbook
   ats: lever
   slug: goalbookapp-2
@@ -138,9 +132,6 @@ companies:
 - name: Noyo
   ats: ashby
   slug: noyo
-- name: OCTO Technology
-  ats: smartrecruiters
-  slug: OCTOTechnology
 - name: Octopus Energy
   ats: lever
   slug: octoenergy
@@ -167,9 +158,6 @@ companies:
 - name: Pleo
   ats: ashby
   slug: pleo
-- name: Poll Everywhere
-  ats: lever
-  slug: polleverywhere
 - name: Prokeep
   ats: ashby
   slug: prokeep
@@ -217,11 +205,6 @@ companies:
 - name: Surglogs
   ats: lever
   slug: surglogs
-- name: Swisscom
-  ats: workday
-  slug: swisscom
-  host: swisscom.wd103.myworkdayjobs.com
-  board: SwisscomExternalCareers
 - name: Textio
   ats: greenhouse
   slug: textio
@@ -234,12 +217,14 @@ companies:
 - name: uberall
   ats: ashby
   slug: Uberall
+- name: UserTesting
+  ats: workday
+  slug: usertesting
+  host: usertesting.wd12.myworkdayjobs.com
+  board: UserTesting
 - name: VTEX
   ats: greenhouse
   slug: vtex
 - name: Wealthsimple
   ats: ashby
   slug: wealthsimple
-- name: Wikimedia Foundation
-  ats: greenhouse
-  slug: wikimedia

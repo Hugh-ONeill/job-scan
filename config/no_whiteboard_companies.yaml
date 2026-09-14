@@ -85,9 +85,6 @@ companies:
 - name: Goalbook
   ats: lever
   slug: goalbookapp-2
-- name: GoCardless
-  ats: greenhouse
-  slug: gocardless
 - name: Hinge Health
   ats: ashby
   slug: hinge-health
@@ -172,6 +169,11 @@ companies:
   slug: pressganey
   host: pressganey.wd1.myworkdayjobs.com
   board: Careers
+- name: Rockerbox
+  ats: workday
+  slug: doubleverify
+  host: doubleverify.wd5.myworkdayjobs.com
+  board: DV_Careers
 - name: Seesaw
   ats: greenhouse
   slug: seesaw
@@ -205,6 +207,11 @@ companies:
 - name: Surglogs
   ats: lever
   slug: surglogs
+- name: Swisscom
+  ats: workday
+  slug: swisscom
+  host: swisscom.wd103.myworkdayjobs.com
+  board: SwisscomExternalCareers
 - name: Textio
   ats: greenhouse
   slug: textio
@@ -222,9 +229,6 @@ companies:
   slug: usertesting
   host: usertesting.wd12.myworkdayjobs.com
   board: UserTesting
-- name: VTEX
-  ats: greenhouse
-  slug: vtex
 - name: Wealthsimple
   ats: ashby
   slug: wealthsimple

@@ -229,7 +229,11 @@ def _weworkremotely(agg: Aggregators) -> list[Posting]:
             out.append(Posting(
                 company=company.strip() or "(WWR)",
                 ats="weworkremotely",
-                slug=cat,
+                # Constant, NOT the category: a job cross-listed in several
+                # feeds must have ONE identity. Keying on the feed it happened
+                # to be found in stored the same posting twice (once per
+                # category) and paid to LLM-score each copy.
+                slug="weworkremotely",
                 posting_id=link.rstrip("/").split("/")[-1],
                 title=(role.strip() or raw_title),
                 location=f"Remote · {region}",

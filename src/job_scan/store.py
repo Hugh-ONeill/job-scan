@@ -1,6 +1,7 @@
 """SQLite store: track which postings we've already scored."""
 from __future__ import annotations
 
+import logging
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
@@ -9,6 +10,8 @@ from pathlib import Path
 from .config import DATA_DIR
 
 DB_PATH = DATA_DIR / "seen.db"
+
+log = logging.getLogger(__name__)
 
 
 def dedupe_key(company: str | None, title: str | None) -> str:
@@ -110,6 +113,7 @@ def _apply_migrations(con: sqlite3.Connection) -> None:
     con.executescript(POST_MIGRATION_INDEXES)
     for sql in BACKFILLS:
         con.execute(sql)
+    _merge_wwr_duplicates(con)
 
 
 @contextmanager
@@ -325,6 +329,81 @@ def followups_due(
     due.sort(key=lambda d: -d["quiet_days"])
     stale.sort(key=lambda d: -d["quiet_days"])
     return due, stale
+
+
+# How much a status is worth keeping when two rows for one job are merged:
+# a real action you took beats a judgement, which beats an untouched default.
+_STATUS_RANK = {"offer": 7, "interview": 6, "applied": 5, "rejected": 4,
+                "no_response": 3, "dismissed": 2, "visited": 1, "pending": 0}
+
+
+def _merge_wwr_duplicates(con: sqlite3.Connection) -> int:
+    """Re-key WeWorkRemotely rows that carry an RSS category as their slug.
+
+    The category a job was found in used to sit in its fingerprint, so a job
+    cross-listed in several feeds was stored (and LLM-scored) once per feed.
+    The slug is now a constant, and this folds the historical duplicates into
+    one row each, keeping the furthest-along status and the widest seen-window.
+    Idempotent: after it runs, the guard below matches nothing.
+    """
+    stale = con.execute(
+        "SELECT * FROM postings WHERE fingerprint LIKE 'weworkremotely:%' "
+        "AND fingerprint NOT LIKE 'weworkremotely:weworkremotely:%'"
+    ).fetchall()
+    if not stale:
+        return 0
+
+    # Group every WWR row by the identity it SHOULD have had. Rows already
+    # correctly keyed join their group so an existing row is never orphaned
+    # by a PRIMARY KEY collision.
+    groups: dict[str, list[sqlite3.Row]] = {}
+    for r in con.execute("SELECT * FROM postings WHERE fingerprint LIKE 'weworkremotely:%'"):
+        parts = r["fingerprint"].split(":", 2)
+        if len(parts) != 3:
+            continue
+        groups.setdefault(f"weworkremotely:weworkremotely:{parts[2]}", []).append(r)
+
+    merged = 0
+    for new_fp, rows in groups.items():
+        if len(rows) == 1 and rows[0]["fingerprint"] == new_fp:
+            continue
+        # Which copy supplies the descriptive columns. They are near-identical
+        # (same RSS item), so this only has to be deterministic: furthest-along
+        # status, then the most recently refreshed copy.
+        keep = max(rows, key=lambda r: (_STATUS_RANK.get(r["status"] or "pending", 0),
+                                        r["last_seen"] or ""))
+        first = min((r["first_seen"] for r in rows if r["first_seen"]), default=keep["first_seen"])
+        last = max((r["last_seen"] for r in rows if r["last_seen"]), default=keep["last_seen"])
+        status = max((r["status"] or "pending" for r in rows),
+                     key=lambda s: _STATUS_RANK.get(s, 0))
+        # Lifecycle data is rare and precious: take it from whichever copy has it.
+        def first_set(col: str):
+            return next((r[col] for r in rows if r[col]), None)
+
+        for r in rows:
+            if r["fingerprint"] != new_fp:
+                con.execute("DELETE FROM postings WHERE fingerprint = ?", (r["fingerprint"],))
+        con.execute(
+            """INSERT INTO postings (fingerprint, company, title, url, location, score,
+                   skill_fit, seniority_fit, domain_fit, location_tier, posted_at,
+                   freshness_days, interview_style, rationale, strengths, concerns,
+                   description, status, first_seen, last_seen, notified, gone, gone_at,
+                   applied_at, status_updated_at, followups, notes)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (new_fp, keep["company"], keep["title"], keep["url"], keep["location"],
+             keep["score"], keep["skill_fit"], keep["seniority_fit"], keep["domain_fit"],
+             keep["location_tier"], keep["posted_at"], keep["freshness_days"],
+             keep["interview_style"], keep["rationale"], keep["strengths"], keep["concerns"],
+             keep["description"], status, first, last,
+             max(int(r["notified"] or 0) for r in rows),
+             min(int(r["gone"] or 0) for r in rows), first_set("gone_at"),
+             first_set("applied_at"), first_set("status_updated_at"),
+             first_set("followups"), first_set("notes")),
+        )
+        merged += len(rows) - 1
+    if merged:
+        log.info("re-keyed WeWorkRemotely fingerprints, merging %d duplicate row(s)", merged)
+    return merged
 
 
 def record_unscored(con: sqlite3.Connection, posting) -> None:

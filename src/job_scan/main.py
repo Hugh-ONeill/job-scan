@@ -19,6 +19,7 @@ from .filter import passes
 from .interview_style import load_no_whiteboard
 from .matcher import combine, freshness_days, score_posting
 from .report import Scored, notify, notify_deferred, notify_failure, write_report
+from .resident import apply_resident
 from .resume import load_resume_text
 from .scrapers.base import Posting, fetch_all
 from .scrapers import (
@@ -161,6 +162,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 record_unscored(con, p)
             backlog = count_unscored(con)
         else:
+            apply_resident(settings.ollama)
             if args.limit:
                 new_postings = new_postings[: args.limit]
                 log.info("limited to %d for this run", len(new_postings))
@@ -288,6 +290,7 @@ def cmd_rescore(args: argparse.Namespace) -> int:
     from .scrapers.base import Posting
 
     settings = load_settings()
+    apply_resident(settings.ollama)
     resume = load_resume_text(settings.resume_path)
     log.info("resume loaded: %d chars", len(resume))
     no_whiteboard = load_no_whiteboard()

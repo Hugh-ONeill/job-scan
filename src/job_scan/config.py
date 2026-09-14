@@ -21,6 +21,10 @@ class OllamaConfig:
     host: str = "http://localhost:11434"
     model: str = "gemma4:26b-a4b-it-q4_K_M"
     timeout: int = 180
+    num_ctx: int = 8192
+    # Adopt whatever compatible model is already loaded (see resident.py).
+    prefer_resident: bool = True
+    resident_families: list[str] = field(default_factory=lambda: ["gemma4"])
 
 
 @dataclass
@@ -165,6 +169,9 @@ def load_settings() -> Settings:
             host=o.get("host", "http://localhost:11434"),
             model=o.get("model", "gemma4:26b-a4b-it-q4_K_M"),
             timeout=int(o.get("timeout", 180)),
+            num_ctx=int(o.get("num_ctx", 8192)),
+            prefer_resident=bool(o.get("prefer_resident", True)),
+            resident_families=[str(x) for x in (o.get("resident_families") or ["gemma4"])],
         ),
         scoring=_load_scoring(raw),
         location_preference=(raw.get("location_preference") or "").strip(),

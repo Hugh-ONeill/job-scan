@@ -11,6 +11,17 @@ ollama:
   model: gemma4:26b-a4b-it-q4_K_M
   # request timeout in seconds (matching is the slowest step)
   timeout: 180
+  num_ctx: 8192
+  # Resident-first: if another tenant (the red-recomp chain) already has a
+  # Gemma loaded, use THAT model at its exact context size instead of the
+  # defaults above. Ollama reloads the runner on any model/num_ctx mismatch and
+  # the two Gemmas can't share 32 GB, so mismatching means eviction ping-pong
+  # (measured 2026-09-09: 150-250 evictions per morning, 38-50 s/posting
+  # instead of 3 s). Nothing loaded -> defaults. Cost: scores drift a little
+  # between 31b and 26b days. Waiting for the scan to finish before starting
+  # the chain is still the better plan; this is the safety net for collisions.
+  prefer_resident: true
+  resident_families: [gemma4]
 
 # Match scoring threshold (0-100). Postings below this are stored as
 # "seen" but not surfaced in the report. Raise to be more selective.

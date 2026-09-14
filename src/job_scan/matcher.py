@@ -222,7 +222,7 @@ def score_posting(
         # Keep the model resident across the whole run so we don't pay a
         # cold-load cost on every posting.
         "keep_alive": "10m",
-        "options": {"temperature": 0.2, "num_ctx": 8192},
+        "options": {"temperature": 0.2, "num_ctx": cfg.num_ctx},
     }
     content = _post_with_retry(cfg, payload)
     return _parse(content, posting, scoring, no_whiteboard or {})

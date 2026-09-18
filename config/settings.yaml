@@ -65,6 +65,15 @@ scoring:
   # An out-of-scope specialization (domain_fit=0) still keeps this fraction.
   # Lower = harsher demotion for ML/security/SRE/embedded/mobile.
   domain_floor: 0.45
+  # Breadth discount for shotgun postings. One that names React AND Angular AND
+  # Vue, five backend languages, four databases and three clouds will overlap
+  # any resume, so a high skill_fit against it means less. Measured over 2,529
+  # scored postings: median names 5 technologies, p90 13, p95 15; mean score
+  # climbed 65 -> 86 purely with breadth. Bounded on purpose: this is meant to
+  # reorder the list, not bury legitimate enterprise postings with wide stacks.
+  breadth_threshold: 16      # ~p95 of postings; no penalty at or below this
+  breadth_points: 0.8        # points deducted per named technology above it
+  breadth_penalty_max: 8     # hard cap on the deduction
   # Points added per location tier (see location_preference below for tiers).
   location_points:
     1: 8     # fully remote (US / anywhere-incl-US)

@@ -62,6 +62,16 @@ class ScoringConfig:
     location_points: dict[int, int] = field(
         default_factory=lambda: {1: 8, 2: 7, 3: 6, 4: 5, 5: 4, 6: 0, 7: -6}
     )
+    # Breadth discount. A posting naming React AND Angular AND Vue, five
+    # backends, four databases and three clouds overlaps any resume by
+    # construction, so a high skill_fit against it means less. Measured over
+    # 2,529 scored postings: median names 5 technologies, p90 13, p95 15, and
+    # mean score rose from 65 (0-3 named) to 86 (24-27 named) purely on breadth.
+    # Deliberately bounded: this reorders the list, it does not exclude broad
+    # but legitimate enterprise postings.
+    breadth_threshold: int = 16        # ~p95; no penalty at or below this
+    breadth_points: float = 0.8        # points deducted per technology above it
+    breadth_penalty_max: int = 8       # hard cap on the deduction
 
 
 @dataclass
@@ -178,6 +188,9 @@ def _load_scoring(raw: dict) -> ScoringConfig:
         location_points=(
             {int(k): int(v) for k, v in loc.items()} if loc else defaults.location_points
         ),
+        breadth_threshold=int(s.get("breadth_threshold", defaults.breadth_threshold)),
+        breadth_points=float(s.get("breadth_points", defaults.breadth_points)),
+        breadth_penalty_max=int(s.get("breadth_penalty_max", defaults.breadth_penalty_max)),
     )
 
 

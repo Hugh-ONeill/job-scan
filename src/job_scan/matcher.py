@@ -35,6 +35,58 @@ class Match:
     rationale: str          # one-line summary
     strengths: list[str]
     concerns: list[str]
+    tech_breadth: int = 0   # distinct technologies named by the posting (see tech_breadth())
+
+
+# Distinct technologies a posting names, used to discount shotgun listings.
+#
+# A posting that asks for React AND Angular AND Vue, Node AND Python AND Java
+# AND .NET AND PHP, three clouds and four databases is not a better match than
+# one asking for the two things it actually uses — it just overlaps more of any
+# resume. Measured over 2,529 scored postings the median names 5 technologies,
+# p90 names 13 and p95 names 15, while mean score climbed from 65 (0-3 named)
+# to 86 (24-27 named). That climb is an artefact of breadth, not fit.
+#
+# Patterns deliberately avoid bare English words: no \bgo\b (matches "go to"),
+# no \bless\b (matches "less than"). Undercounting a language is harmless here
+# because the signal is breadth, not inventory completeness.
+_TECH_PATTERNS = {
+    "javascript": r"javascript", "typescript": r"typescript", "python": r"\bpython\b",
+    "java": r"\bjava\b(?!script)", "kotlin": r"\bkotlin\b", "scala": r"\bscala\b",
+    "golang": r"\bgolang\b|\bgo\s+(?:lang|programming)", "ruby": r"\bruby\b", "php": r"\bphp\b",
+    "csharp": r"c#|\.net\b", "cpp": r"c\+\+", "rust": r"\brust\b", "swift": r"\bswift\b",
+    "perl": r"\bperl\b",
+    "react": r"\breact\b", "angular": r"\bangular\b", "vue": r"vue\.?js|\bvue\b",
+    "svelte": r"\bsvelte", "nextjs": r"next\.js|\bnextjs\b", "node": r"node\.?js",
+    "django": r"\bdjango\b", "flask": r"\bflask\b", "fastapi": r"\bfastapi\b",
+    "spring": r"spring\s*boot|\bspring\b", "rails": r"\brails\b",
+    "postgres": r"postgres", "mysql": r"\bmysql\b", "mongodb": r"mongo\s?db|\bmongo\b",
+    "oracle": r"\boracle\b", "sqlserver": r"sql\s*server|\bmssql\b", "redis": r"\bredis\b",
+    "cassandra": r"\bcassandra\b", "dynamodb": r"\bdynamodb\b", "firebase": r"\bfirebase\b",
+    "snowflake": r"\bsnowflake\b", "bigquery": r"\bbigquery\b", "db2": r"\bdb2\b",
+    "elastic": r"elasticsearch|opensearch", "neo4j": r"\bneo4j\b",
+    "aws": r"\baws\b|amazon web services", "azure": r"\bazure\b", "gcp": r"\bgcp\b|google cloud",
+    "docker": r"\bdocker\b", "kubernetes": r"kubernetes|\bk8s\b|\beks\b",
+    "terraform": r"\bterraform\b", "pulumi": r"\bpulumi\b", "helm": r"helm\s*chart|\bhelm\b",
+    "jenkins": r"\bjenkins\b", "gitlab": r"\bgitlab\b", "github": r"\bgithub\b",
+    "jira": r"\bjira\b", "confluence": r"\bconfluence\b",
+    "kafka": r"\bkafka\b", "rabbitmq": r"\brabbitmq\b", "spark": r"apache\s+spark|\bpyspark\b",
+    "airflow": r"\bairflow\b", "hadoop": r"\bhadoop\b",
+    "graphql": r"\bgraphql\b", "grpc": r"\bgrpc\b", "rest": r"restful|rest\s+api",
+    "selenium": r"\bselenium\b", "playwright": r"\bplaywright\b", "cypress": r"\bcypress\b",
+    "jest": r"\bjest\b", "junit": r"\bjunit\b", "pytest": r"\bpytest\b",
+    "pytorch": r"\bpytorch\b", "tensorflow": r"\btensorflow\b", "sklearn": r"scikit",
+    "html": r"\bhtml5?\b", "css": r"\bcss3?\b", "sass": r"\bsass\b|\bscss\b",
+    "tailwind": r"\btailwind\b", "webpack": r"\bwebpack\b", "vite": r"\bvite\b",
+    "maven": r"\bmaven\b", "gradle": r"\bgradle\b",
+}
+_TECH_RE = {name: re.compile(pat) for name, pat in _TECH_PATTERNS.items()}
+
+
+def tech_breadth(description: str) -> int:
+    """How many distinct technologies the posting names."""
+    text = (description or "").lower()
+    return sum(1 for rx in _TECH_RE.values() if rx.search(text))
 
 
 SYSTEM = """You are a career-fit evaluator. You will be given a candidate's
@@ -170,6 +222,7 @@ def combine(
     location_tier: int,
     scoring: ScoringConfig,
     interview_bonus: int = 0,
+    tech_breadth: int = 0,
 ) -> int:
     """Assemble the final 0-100 score from the LLM sub-scores + adjustments.
 
@@ -189,7 +242,13 @@ def combine(
     dom_gate = scoring.domain_floor + (1 - scoring.domain_floor) * (domain_fit / 100)
     base = skill_fit * sen_gate * dom_gate
     loc = scoring.location_points.get(location_tier, 0)
-    return _clamp(base + loc + interview_bonus)
+    # Breadth discount: a posting naming far more technologies than typical
+    # overlaps any resume by construction, so the match means less. Bounded on
+    # purpose — this is meant to reorder the list, not exclude legitimate
+    # enterprise postings that genuinely run a wide stack.
+    over = max(0, tech_breadth - scoring.breadth_threshold)
+    breadth_penalty = min(scoring.breadth_penalty_max, over * scoring.breadth_points)
+    return _clamp(base + loc + interview_bonus - breadth_penalty)
 
 
 def score_posting(
@@ -316,9 +375,10 @@ def _parse(content: str, posting: Posting, scoring: ScoringConfig, no_whiteboard
     if tier not in (1, 2, 3, 4, 5, 6, 7):
         tier = 6  # neutral
     days = freshness_days(posting.posted_at)
+    breadth = tech_breadth(posting.description)
 
     return Match(
-        score=combine(skill, seniority, domain, tier, scoring, bonus),
+        score=combine(skill, seniority, domain, tier, scoring, bonus, breadth),
         skill_fit=skill,
         seniority_fit=seniority,
         domain_fit=domain,
@@ -328,4 +388,5 @@ def _parse(content: str, posting: Posting, scoring: ScoringConfig, no_whiteboard
         rationale=str(data.get("rationale", "")).strip(),
         strengths=[str(s) for s in data.get("strengths", []) or []],
         concerns=filter_concerns([str(s) for s in data.get("concerns", []) or []]),
+        tech_breadth=breadth,
     )

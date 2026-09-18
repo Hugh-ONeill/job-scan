@@ -2,8 +2,8 @@
 Description=Run job-scan daily
 
 [Timer]
-# Fires daily at 09:00 local. Persistent=true catches up after suspend/poweroff.
-OnCalendar=*-*-* 09:00:00
+# Fires daily at 07:00 local. Persistent=true catches up after suspend/poweroff.
+OnCalendar=*-*-* 07:00:00
 Persistent=true
 # Randomized jitter to spread load and avoid hitting all ATS APIs at the same time
 RandomizedDelaySec=300

@@ -2,9 +2,9 @@
 Description=Run the weekly no-whiteboard job sweep
 
 [Timer]
-# Fires Mondays at 08:30 local — ahead of the daily 09:00 run.
+# Fires Mondays at 06:30 local — ahead of the daily 07:00 run.
 # Persistent=true catches up after suspend/poweroff.
-OnCalendar=Mon *-*-* 08:30:00
+OnCalendar=Mon *-*-* 06:30:00
 Persistent=true
 RandomizedDelaySec=600
 Unit=job-scan-weekly.service

@@ -1,10 +1,12 @@
 """SQLite store: track which postings we've already scored."""
 from __future__ import annotations
 
+import hashlib
 import logging
+import re
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from .config import DATA_DIR
@@ -80,11 +82,168 @@ MIGRATIONS = [
     ("status_updated_at", "ALTER TABLE postings ADD COLUMN status_updated_at TEXT"),
     ("followups",         "ALTER TABLE postings ADD COLUMN followups TEXT"),
     ("notes",             "ALTER TABLE postings ADD COLUMN notes TEXT"),
+    # sha1 of the normalised description. The same text under DIFFERENT company
+    # names is a posting farm, not competing employers.
+    ("desc_hash",         "ALTER TABLE postings ADD COLUMN desc_hash TEXT"),
 ]
 
 POST_MIGRATION_INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_status ON postings(status);
+CREATE INDEX IF NOT EXISTS idx_desc_hash ON postings(desc_hash);
 """
+
+
+# --- duplicate-description detection -------------------------------------
+#
+# On 2026-09-14 thirty-three postings landed on careers-page.com inside six
+# minutes under thirty different company names. Five of them (Avenue A Staffing,
+# "L3harris", MeetHires, Snapx, Viper Staffing Services) shared one
+# byte-identical description; Bridgewater Overhead Doors and Logic Hire shared
+# another. Several scored 99-100, because a generic posting overlaps any resume.
+# One operator, many names.
+#
+# A description shared across genuinely different companies is the cheapest
+# reliable signal for that. Names are normalised first so real variants
+# ("Precisely" / "Precisely US Jobs", "Fanatics" / "Fanatics Betting & Gaming")
+# are not mistaken for separate employers.
+
+# Deducted when the same text appears under enough UNRELATED names to mean a
+# posting farm. Large on purpose: it should push the posting under min_score
+# (60) so it stops being reported, while staying visible with the reason.
+DUPLICATE_POSTER_PENALTY = 45
+
+# How many distinct, unrelated companies must share one description before it
+# counts as a farm rather than corporate structure. Measured on 2,627 postings:
+# at a threshold of 2 the check fires 14 times and 12 of those are parents,
+# subsidiaries or abbreviations posting one req (Xplor/Clubessential,
+# RELX/Elsevier, Hearst/CDS Global, Sandvik/GibbsCAM, Caesars/Caesars). At 3 it
+# fires on the two real farms. Two-name matches are still reported as a concern,
+# they just are not penalised -- knowing that two "employers" are one company is
+# useful on its own.
+DUPLICATE_POSTER_MIN_COMPANIES = 3
+
+# --- posting-burst detection ---------------------------------------------
+#
+# The duplicate check above only catches an operator who reuses one description.
+# Richmond Public Schools (2026-09-14 16:09) had unique text and a real
+# institution's name, and still almost certainly was not that institution: the
+# district recruits through PowerSchool TalentEd and SchoolSpring, the body
+# mentioned nothing about schools, and it landed inside a six-minute window that
+# produced ~30 listings under ~25 company names on one self-serve ATS.
+#
+# Measured over every timestamped posting in the DB: the largest LEGITIMATE
+# cluster on a per-employer ATS host is 3 distinct companies in 15 minutes
+# (greenhouse, 2026-08-27). The careers-page.com burst was 25. There is a wide
+# gap to sit a threshold in.
+#
+# Aggregators are excluded because they cluster by construction: their
+# posted_at is when the board indexed a job, not when an employer posted it.
+# Hacker News "Who is hiring" arrives as one thread; WeWorkRemotely, whatjobs
+# and Wellfound all show legitimate 3-18 company windows.
+BURST_ATS_HOSTS = (
+    "careers-page.com", "greenhouse.io", "ashbyhq.com", "ats.rippling.com",
+    "comeet.com", "smartrecruiters.com", "lever.co", "workable.com",
+    "recruitee.com", "bamboohr.com", "jazzhr.com", "breezy.hr", "myworkday.com",
+)
+BURST_WINDOW_MINUTES = 15
+BURST_MIN_COMPANIES = 8      # legit ATS max observed is 3; the farm was 25
+# Moderate on purpose. Some of that burst were real (BridgePoint Works has a
+# website and a Clutch profile; David Joseph & Company is a real recruiter), so
+# this reorders rather than buries. The named concern is the real payload.
+BURST_PENALTY = 25
+
+
+def _ats_host(url: str) -> str:
+    """The per-employer ATS host for a posting URL, or "" if not one."""
+    m = re.match(r"https?://([^/]+)", url or "")
+    if not m:
+        return ""
+    host = m.group(1).lower().replace("www.", "")
+    for known in BURST_ATS_HOSTS:
+        if host.endswith(known):
+            return known
+    return ""
+
+
+def burst_cohort(con: sqlite3.Connection, url: str, posted_at: str, company: str) -> int:
+    """Distinct OTHER companies that posted to the same ATS within the window.
+
+    Returns 0 when the host is not a per-employer ATS, or when posted_at has no
+    real time component (many sources report midnight, which would cluster a
+    whole day's postings together).
+    """
+    host = _ats_host(url)
+    if not host or not posted_at or posted_at[11:19] in ("00:00:00", ""):
+        return 0
+    try:
+        when = datetime.fromisoformat(posted_at.replace("Z", "+00:00"))
+    except ValueError:
+        return 0
+    lo = (when - timedelta(minutes=BURST_WINDOW_MINUTES)).isoformat()
+    hi = (when + timedelta(minutes=BURST_WINDOW_MINUTES)).isoformat()
+    rows = con.execute(
+        "SELECT DISTINCT company FROM postings "
+        "WHERE url LIKE ? AND posted_at >= ? AND posted_at <= ?",
+        (f"%{host}%", lo, hi),
+    )
+    return len({r[0] for r in rows if r[0] and not _same_company(r[0], company)})
+
+_LEGAL_SUFFIX = re.compile(
+    r"\b(inc|llc|ltd|limited|corp|corporation|co|gmbh|plc|lp|llp|pllc"
+    r"|group|holdings|solutions|services|staffing)\b"
+)
+
+
+def _norm_company(name: str) -> str:
+    n = re.sub(r"[^a-z0-9 ]+", " ", (name or "").lower())
+    n = _LEGAL_SUFFIX.sub(" ", n)
+    return " ".join(n.split())
+
+
+def _acronym(name: str) -> str:
+    """Initials of a company name, before legal suffixes are stripped."""
+    words = re.sub(r"[^a-z0-9 ]+", " ", (name or "").lower()).split()
+    return "".join(w[0] for w in words if w)
+
+
+def _same_company(a: str, b: str) -> bool:
+    """True when two names plausibly denote the same employer.
+
+    Catches exact matches, prefixes ("Precisely" / "Precisely US Jobs") and
+    acronyms ("gdit" / "General Dynamics Information Technology"). Corporate
+    families posting one req under a parent and a brand are NOT a posting farm.
+    """
+    na, nb = _norm_company(a), _norm_company(b)
+    if not na or not nb:
+        return False
+    if na == nb:
+        return True
+    short, long = (na, nb) if len(na) <= len(nb) else (nb, na)
+    if len(short) >= 4 and long.startswith(short):
+        return True
+    # acronym, computed on the raw names so stripped suffixes still contribute
+    ra, rb = a or "", b or ""
+    for tiny, full in ((ra, rb), (rb, ra)):
+        t = re.sub(r"[^a-z0-9]+", "", tiny.lower())
+        if 2 <= len(t) <= 5 and t == _acronym(full):
+            return True
+    return False
+
+
+def desc_hash(description: str) -> str:
+    """Stable hash of a posting body, or "" when too short to be meaningful."""
+    text = " ".join((description or "").split()).lower()
+    if len(text) < 200:
+        return ""
+    return hashlib.sha1(text.encode()).hexdigest()[:16]
+
+
+def duplicate_posters(con: sqlite3.Connection, dhash: str, company: str) -> list[str]:
+    """Other company names that posted this exact description."""
+    if not dhash:
+        return []
+    rows = con.execute("SELECT DISTINCT company FROM postings WHERE desc_hash = ?", (dhash,))
+    return sorted({r[0] for r in rows if r[0] and not _same_company(r[0], company)})
 
 
 def _now() -> str:
@@ -176,16 +335,47 @@ def record_scored(
 ) -> None:
     import json
     now = _now()
+
+    # Same body, different company name = posting farm. Demote hard and say why.
+    dhash = desc_hash(description)
+    others = duplicate_posters(con, dhash, company)
+    if others:
+        shown = ", ".join(others[:4]) + (f" and {len(others) - 4} more" if len(others) > 4 else "")
+        if len(others) + 1 >= DUPLICATE_POSTER_MIN_COMPANIES:
+            concerns = [
+                f"Posting farm: identical text published under {len(others) + 1} unrelated "
+                f"company names ({shown})."
+            ] + list(concerns or [])
+            score = max(0, score - DUPLICATE_POSTER_PENALTY)
+            log.warning("posting farm: %s shares its description with %s", company, shown)
+        else:
+            concerns = [
+                f"Identical posting text also published by {shown} "
+                f"(likely the same company under another name)."
+            ] + list(concerns or [])
+
+    # Burst: many unrelated companies posting to one self-serve ATS at once.
+    cohort = burst_cohort(con, url, posted_at, company)
+    if cohort + 1 >= BURST_MIN_COMPANIES:
+        concerns = [
+            f"Posted in a burst: {cohort + 1} different companies published to "
+            f"{_ats_host(url)} within {BURST_WINDOW_MINUTES} minutes of this one. "
+            f"Verify the employer independently before applying."
+        ] + list(concerns or [])
+        score = max(0, score - BURST_PENALTY)
+        log.warning("burst posting: %s is 1 of %d companies on %s within %dmin",
+                    company, cohort + 1, _ats_host(url), BURST_WINDOW_MINUTES)
+
     s_json = json.dumps(strengths or [])
     c_json = json.dumps(concerns or [])
     con.execute(
         """INSERT INTO postings
            (fingerprint, company, title, url, location, score, rationale,
-            strengths, concerns, description, status,
+            strengths, concerns, description, status, desc_hash,
             skill_fit, seniority_fit, domain_fit, location_tier,
             posted_at, freshness_days, interview_style,
             first_seen, last_seen, notified)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending',
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?,
                    ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
            ON CONFLICT(fingerprint) DO UPDATE SET
              last_seen     = excluded.last_seen,
@@ -200,9 +390,10 @@ def record_scored(
              location_tier = excluded.location_tier,
              posted_at     = excluded.posted_at,
              freshness_days = excluded.freshness_days,
-             interview_style = excluded.interview_style""",
+             interview_style = excluded.interview_style,
+             desc_hash       = excluded.desc_hash""",
         (fingerprint, company, title, url, location, score, rationale,
-         s_json, c_json, description,
+         s_json, c_json, description, dhash,
          skill_fit, seniority_fit, domain_fit, location_tier,
          posted_at, freshness_days, interview_style, now, now),
     )

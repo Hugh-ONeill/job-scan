@@ -262,3 +262,19 @@ def notify(
         ],
         check=False,
     )
+
+
+def notify_watch(hits: list[Scored], dashboard_url: str) -> None:
+    """Intraday watch: strong new postings only, so this interrupts rarely."""
+    if not shutil.which("notify-send") or not hits:
+        return
+    top = sorted(hits, key=_rank)[:4]
+    lines = [f"<b>{s.match.score}</b> · {s.posting.company} — {s.posting.title}" for s in top]
+    if len(hits) > len(top):
+        lines.append(f"…and {len(hits) - len(top)} more")
+    lines += ["", dashboard_url]
+    subprocess.run(
+        ["notify-send", "-u", "normal", "-a", "job-scan",
+         f"job-scan watch: {len(hits)} strong new posting(s)", "\n".join(lines)],
+        check=False,
+    )

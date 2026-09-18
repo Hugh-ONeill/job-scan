@@ -161,6 +161,24 @@ aggregators:
 # after two silent follow-ups the dashboard suggests recording no_response.
 followup_after_days: 10
 
+# Intraday watch (`job_scan watch`, systemd job-scan-watch.timer, every two
+# hours 10:00-20:00). Re-fetches only LinkedIn and freehire: over the 14 days
+# to 2026-09-18 they produced 101 of 102 postings scoring 95+ and 89 of 91
+# applications, while the company-board sweep (7 of the run's 12 fetch
+# minutes) produced none at 95+. Everything else stays in the daily run.
+# Postings the watch scores show in the dashboard immediately but NOT in the
+# next morning's markdown report (the run only reports what it scored itself).
+watch:
+  linkedin_hours: 3       # LinkedIn f_TPR window; overlaps the 2h cadence
+  # Measured 2026-09-18 11:25: a watch at the daily footprint (4 pages, 65
+  # details, ~110 requests) drew ten 429s; the daily run sees ~3 a month.
+  # 1 page x 16 query/location pairs + 20 details caps a watch at ~36 requests.
+  linkedin_pages: 1
+  linkedin_max_details: 20
+  freehire_days: 1        # freehire's smallest server-side window
+  max_score: 30           # LLM scores per watch; overflow waits for the morning run
+  notify_min_score: 90    # notify only for postings at or above this
+
 # Top N matches highlighted at the top of the report and in notify-send.
 top_n: 10
 

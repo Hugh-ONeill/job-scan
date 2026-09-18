@@ -9,6 +9,7 @@ import socket
 import subprocess
 import sys
 import time
+from dataclasses import replace
 
 from .aggregators import fetch_aggregators
 from .config import (
@@ -18,7 +19,7 @@ from .config import (
 from .filter import passes
 from .interview_style import load_no_whiteboard
 from .matcher import combine, freshness_days, score_posting
-from .report import Scored, notify, notify_deferred, notify_failure, write_report
+from .report import Scored, notify, notify_deferred, notify_failure, notify_watch, write_report
 from .resident import apply_resident
 from .resume import load_resume_text
 from .scrapers.base import Posting, fetch_all
@@ -123,16 +124,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     # they've been seen. Per-ATS overrides in ats_max_age_days (enterprise
     # boards keep live reqs open far longer than startup ATSs). 0 disables,
     # globally or per ATS.
-    if settings.max_age_days or settings.ats_max_age_days:
-        before = len(filtered)
-
-        def _fresh(p: Posting) -> bool:
-            limit = settings.ats_max_age_days.get(p.ats, settings.max_age_days)
-            return not limit or (freshness_days(p.posted_at) or 0) <= limit
-
-        filtered = [p for p in filtered if _fresh(p)]
-        if before - len(filtered):
-            log.info("dropped %d stale postings", before - len(filtered))
+    filtered = _drop_stale(filtered, settings)
 
     with connect() as con:
         all_fps = [p.fingerprint for p in filtered]
@@ -183,15 +175,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 failed += 1
                 continue
             scored.append(Scored(posting=p, match=m))
-            record_scored(
-                con, p.fingerprint, p.company, p.title, p.url, p.location,
-                m.score, m.rationale,
-                strengths=m.strengths, concerns=m.concerns, description=p.description,
-                skill_fit=m.skill_fit, seniority_fit=m.seniority_fit,
-                domain_fit=m.domain_fit, location_tier=m.location_tier,
-                posted_at=p.posted_at, freshness_days=m.freshness_days,
-                interview_style=m.interview_style,
-            )
+            _record(con, p, m)
 
         # Open applications gone quiet — surfaced in the same report/notify
         # pass as new matches, so chasing what's already sent isn't a separate
@@ -238,6 +222,142 @@ def cmd_run(args: argparse.Namespace) -> int:
             notify_failure(failed, attempted)
         return 1
 
+    return 0
+
+
+def _drop_stale(postings: list[Posting], settings) -> list[Posting]:
+    """Drop postings whose KNOWN post date is older than max_age_days (per-ATS
+    overrides in ats_max_age_days; 0 disables). Undated postings pass."""
+    if not (settings.max_age_days or settings.ats_max_age_days):
+        return postings
+
+    def _fresh(p: Posting) -> bool:
+        limit = settings.ats_max_age_days.get(p.ats, settings.max_age_days)
+        return not limit or (freshness_days(p.posted_at) or 0) <= limit
+
+    kept = [p for p in postings if _fresh(p)]
+    if len(postings) - len(kept):
+        log.info("dropped %d stale postings", len(postings) - len(kept))
+    return kept
+
+
+def _record(con, p: Posting, m) -> None:
+    record_scored(
+        con, p.fingerprint, p.company, p.title, p.url, p.location,
+        m.score, m.rationale,
+        strengths=m.strengths, concerns=m.concerns, description=p.description,
+        skill_fit=m.skill_fit, seniority_fit=m.seniority_fit,
+        domain_fit=m.domain_fit, location_tier=m.location_tier,
+        posted_at=p.posted_at, freshness_days=m.freshness_days,
+        interview_style=m.interview_style,
+    )
+
+
+def _unit_active(unit: str) -> bool:
+    try:
+        out = subprocess.run(["systemctl", "--user", "is-active", unit],
+                             capture_output=True, text=True, timeout=5)
+        return out.stdout.strip() in ("active", "activating")
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _foreign_model_resident(cfg) -> str | None:
+    """Name of a loaded model outside our families (e.g. an RP chat on qwen),
+    or None. A watch must not evict someone's interactive session."""
+    import requests
+    try:
+        models = requests.get(f"{cfg.host}/api/ps", timeout=5).json().get("models") or []
+    except (requests.RequestException, ValueError):
+        return None
+    fams = {f.lower() for f in cfg.resident_families}
+    ours = [m for m in models if m.get("name", "").split(":", 1)[0].lower() in fams]
+    others = [m["name"] for m in models if m not in ours and "embed" not in m.get("name", "").lower()]
+    return others[0] if others and not ours else None
+
+
+def cmd_watch(args: argparse.Namespace) -> int:
+    """Intraday watch between daily runs. Cheap: re-fetches only LinkedIn (a
+    few-hours window) and freehire, scores only postings never seen before, and
+    notifies only on strong ones. No report file, no dashboard pop, and no
+    liveness pass (a partial fetch would mark every unfetched posting gone)."""
+    settings = load_settings()
+    w = settings.watch
+    for unit in ("job-scan.service", "job-scan-weekly.service"):
+        if _unit_active(unit) and not args.force:
+            log.info("%s is running; skipping this watch", unit)
+            return 0
+    filters = load_filters()
+    agg = load_aggregators()
+    agg = replace(agg, hackernews=False, remoteok=False, remotive=False,
+                  weworkremotely=False, freehire_days=w.freehire_days,
+                  linkedin=agg.linkedin and not args.no_linkedin,
+                  linkedin_hours=w.linkedin_hours, linkedin_pages=w.linkedin_pages,
+                  linkedin_max_details=w.linkedin_max_details)
+
+    t0 = time.monotonic()
+    with connect() as con:
+        known = {r["fingerprint"] for r in con.execute("SELECT fingerprint FROM postings")}
+    postings = fetch_aggregators(agg, known, filters)
+    filtered = _drop_stale([p for p in postings if passes(p, filters)], settings)
+
+    with connect() as con:
+        fps = [p.fingerprint for p in filtered]
+        new_fps = filter_new(con, fps)
+        touch_seen(con, [fp for fp in fps if fp not in new_fps])
+        # Commit early and after every posting: an open write transaction held
+        # across ~20 min of LLM calls would lock the dashboard out of marking
+        # postings visited/applied for the whole watch.
+        con.commit()
+        new = [p for p in filtered if p.fingerprint in new_fps]
+        log.info("watch: %d fetched in %.1fs, %d pass filters, %d new",
+                 len(postings), time.monotonic() - t0, len(filtered), len(new))
+        if not new:
+            return 0
+
+        # Anything not scored here is deliberately NOT recorded: left unseen,
+        # the morning run (3-day LinkedIn, 7-day freehire window) scores it.
+        foreign = _foreign_model_resident(settings.ollama)
+        if args.no_llm or foreign or not _ollama_up(settings.ollama.host):
+            why = ("--no-llm" if args.no_llm
+                   else f"{foreign} is loaded (someone else's session)" if foreign
+                   else "Ollama unreachable")
+            log.info("watch: %s; %d new postings wait for the next run", why, len(new))
+            return 0
+        apply_resident(settings.ollama)
+        # Freshest first: LinkedIn (its window is only a few hours, so every
+        # card is new today), then freehire newest-first.
+        new.sort(key=lambda p: p.posted_at or "", reverse=True)
+        new.sort(key=lambda p: p.ats != "linkedin")
+        if len(new) > w.max_score:
+            log.info("watch: scoring %d of %d; the rest wait for the next run", w.max_score, len(new))
+            new = new[: w.max_score]
+
+        resume = load_resume_text(settings.resume_path)
+        no_whiteboard = load_no_whiteboard()
+        hits: list[Scored] = []
+        for i, p in enumerate(new, 1):
+            log.info("[%d/%d] scoring %s | %s", i, len(new), p.company, p.title)
+            try:
+                m = score_posting(settings.ollama, resume, p, settings.scoring,
+                                  settings.location_preference, no_whiteboard)
+            except Exception as e:
+                log.warning("scoring failed for %s/%s: %s", p.company, p.title, e)
+                continue
+            _record(con, p, m)
+            # Read back: record_scored applies the duplicate/burst demotions,
+            # so the stored score is the one that decides a notification.
+            m.score = con.execute("SELECT score FROM postings WHERE fingerprint = ?",
+                                  (p.fingerprint,)).fetchone()["score"]
+            con.commit()
+            print(f"{m.score:3d}  {p.company} | {p.title}")
+            if m.score >= w.notify_min_score:
+                hits.append(Scored(posting=p, match=m))
+        mark_notified(con, [s.posting.fingerprint for s in hits])
+
+    if hits and not args.no_notify:
+        notify_watch(hits, WEB_URL)
+    log.info("watch: %d at or above %d", len(hits), w.notify_min_score)
     return 0
 
 
@@ -600,6 +720,13 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--no-llm", action="store_true",
                      help="collect + dedup only, defer scoring (also automatic when Ollama is unreachable)")
     run.set_defaults(func=cmd_run)
+
+    wt = sub.add_parser("watch", help="intraday watch: LinkedIn + freehire only, notify on strong new postings")
+    wt.add_argument("--no-llm", action="store_true", help="fetch and count only; score nothing")
+    wt.add_argument("--no-notify", action="store_true", help="skip notify-send")
+    wt.add_argument("--no-linkedin", action="store_true", help="freehire only (e.g. while LinkedIn is throttling)")
+    wt.add_argument("--force", action="store_true", help="run even while a daily/weekly scan is running")
+    wt.set_defaults(func=cmd_watch)
 
     probe = sub.add_parser("probe", help="test an ATS+slug combo")
     probe.add_argument("ats", choices=["greenhouse", "lever", "ashby", "workday", "smartrecruiters"])

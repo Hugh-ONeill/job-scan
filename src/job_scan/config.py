@@ -65,6 +65,23 @@ class ScoringConfig:
 
 
 @dataclass
+class WatchConfig:
+    """Intraday watch: a cheap pass over the fast sources between daily runs.
+
+    Only LinkedIn and freehire are fetched (they surface nearly every strong
+    match; the company-board sweep is the slow part of a run and stays daily).
+    """
+    linkedin_hours: int = 3       # overlaps a 2-hour cadence so nothing slips between
+    # A full-footprint watch (4 pages, 65 details, ~110 requests) drew ten 429s
+    # at 11:25 on 2026-09-18; the daily run sees ~3 a month. Keep watches small.
+    linkedin_pages: int = 1
+    linkedin_max_details: int = 20
+    freehire_days: int = 1        # freehire's smallest server-side window
+    max_score: int = 30           # LLM scores per watch; the rest wait for the morning run
+    notify_min_score: int = 90    # only interrupt for postings at or above this
+
+
+@dataclass
 class Settings:
     resume_path: Path
     ollama: OllamaConfig
@@ -86,6 +103,7 @@ class Settings:
     # as needing a follow-up. Standard practice is a brief, polite follow-up
     # after one to two weeks, at most twice.
     followup_after_days: int = 10
+    watch: WatchConfig = field(default_factory=WatchConfig)
 
 
 @dataclass
@@ -132,6 +150,9 @@ class Aggregators:
         "New Jersey, United States", "New York City Metropolitan Area",
     ])
     linkedin_days: int = 3          # f_TPR window: only postings this fresh
+    # Hours window for the intraday watch; 0 = use linkedin_days. LinkedIn's
+    # f_TPR takes seconds, so a watch can ask for just the last few hours.
+    linkedin_hours: int = 0
     linkedin_pages: int = 4          # search pages per query x location (10 results each)
     linkedin_max_details: int = 120  # detail pages per run (new, pre-filtered postings only)
     # Search terms for sources that support server-side search (Remotive, HN
@@ -184,6 +205,20 @@ def load_settings() -> Settings:
             str(k): int(v) for k, v in (raw.get("ats_max_age_days") or {}).items()
         },
         followup_after_days=int(raw.get("followup_after_days", 10)),
+        watch=_load_watch(raw),
+    )
+
+
+def _load_watch(raw: dict) -> WatchConfig:
+    w = raw.get("watch") or {}
+    dflt = WatchConfig()
+    return WatchConfig(
+        linkedin_hours=int(w.get("linkedin_hours", dflt.linkedin_hours)),
+        linkedin_pages=int(w.get("linkedin_pages", dflt.linkedin_pages)),
+        linkedin_max_details=int(w.get("linkedin_max_details", dflt.linkedin_max_details)),
+        freehire_days=int(w.get("freehire_days", dflt.freehire_days)),
+        max_score=int(w.get("max_score", dflt.max_score)),
+        notify_min_score=int(w.get("notify_min_score", dflt.notify_min_score)),
     )
 
 

@@ -181,6 +181,7 @@ def fetch_linkedin(
     known = known_fps or set()
     cards: dict[str, dict] = {}
     searches = 0
+    window = agg.linkedin_hours * 3600 if agg.linkedin_hours else agg.linkedin_days * 86400
     for location in agg.linkedin_locations:
         for term in agg.queries:
             # Paging is worth it: pages return near-disjoint results (verified
@@ -192,7 +193,7 @@ def fetch_linkedin(
                         "keywords": term,
                         "location": location,
                         # f_TPR = time-posted-range in seconds ("r172800" = 2 days).
-                        "f_TPR": f"r{agg.linkedin_days * 86400}",
+                        "f_TPR": f"r{window}",
                         "start": str(page_no * PAGE_SIZE),
                     })
                 except Exception as e:

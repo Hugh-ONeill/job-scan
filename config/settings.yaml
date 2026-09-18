@@ -151,7 +151,8 @@ aggregators:
     - full stack
     - backend
     - frontend
-  # Cap postings pulled per source per run (keeps the daily scoring load sane).
+  # Cap on NEW, filter-passing postings per source per run (keeps the scoring
+  # load sane). Already-stored postings don't count; overflow waits a run.
   max_per_source: 200
 
 # Days of silence before an open application (applied/interview) is flagged

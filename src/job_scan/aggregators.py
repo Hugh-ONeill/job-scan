@@ -16,6 +16,7 @@ import xml.etree.ElementTree as ET
 import requests
 
 from .config import Aggregators
+from .filter import passes
 from .scrapers.base import Posting, html_to_markdown, html_to_text, normalize_date
 
 log = logging.getLogger(__name__)
@@ -47,12 +48,32 @@ def fetch_aggregators(
         if not enabled:
             continue
         try:
-            got = fn(agg)[: agg.max_per_source]
+            got = _cap_new(fn(agg), agg.max_per_source, known_fps or set(), filters)
             log.info("aggregator %s: %d postings", name, len(got))
             out.extend(got)
         except Exception as e:
             log.warning("aggregator %s failed: %s", name, e)
     return out
+
+
+def _cap_new(got: list[Posting], cap: int, known: set[str], filters) -> list[Posting]:
+    """Apply max_per_source to what would actually be SCORED: postings the DB
+    has not seen that pass the pre-filters. Known postings cost nothing and are
+    kept, so touch_seen and liveness stay correct; overflow stays unseen and is
+    picked up by the next run.
+
+    Capping the raw list instead kept the same prefix every run. freehire lists
+    results in search-term order, so "backend" and "frontend" kept 0 of 100
+    each, every day from 2026-08-31 to 2026-09-18; HN's monthly thread lost its
+    back half for the whole month.
+    """
+    fresh = [p for p in got
+             if p.fingerprint not in known and (filters is None or passes(p, filters))]
+    if len(fresh) <= cap:
+        return got
+    drop = {p.fingerprint for p in fresh[cap:]}
+    log.info("capping %d new postings at %d; the rest wait for the next run", len(fresh), cap)
+    return [p for p in got if p.fingerprint not in drop]
 
 
 def _hackernews(agg: Aggregators) -> list[Posting]:

@@ -107,3 +107,12 @@ location_exclude:
   - "remote - apac"
   - "remote - latam"
   - "remote - india"
+
+# Hosts dropped regardless of which aggregator surfaced them. freehire is a good
+# source overall (Lazarus, QuoteWell, Ledgebrook, Precisely and Xplor all came
+# through it) but it republishes boards that are not worth reading.
+# himalayas.app: 27 postings seen, scores up to 100, ZERO ever applied to. High
+# scores, no conversion, and the site is oriented toward selling its own
+# services. Dropped 2026-09-16.
+blocked_domains:
+  - himalayas.app

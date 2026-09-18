@@ -122,6 +122,8 @@ class Filters:
     title_exclude: list[str] = field(default_factory=list)
     location_include: list[str] = field(default_factory=list)
     location_exclude: list[str] = field(default_factory=list)
+    # Hosts dropped before scoring, whichever aggregator surfaced them.
+    blocked_domains: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -242,6 +244,7 @@ def load_filters() -> Filters:
         title_exclude=[s.lower() for s in raw.get("title_exclude", [])],
         location_include=[s.lower() for s in raw.get("location_include", [])],
         location_exclude=[s.lower() for s in raw.get("location_exclude", [])],
+        blocked_domains=[s.lower() for s in raw.get("blocked_domains", [])],
     )
 
 

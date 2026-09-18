@@ -93,6 +93,12 @@ def passes(posting: Posting, f: Filters) -> bool:
     title = posting.title.lower()
     loc = posting.location.lower()
 
+    # Blocked hosts are dropped no matter which aggregator republished them.
+    if f.blocked_domains:
+        host = (posting.url or "").lower()
+        if any(d in host for d in f.blocked_domains):
+            return False
+
     if f.title_include and not _matches_any(title, f.title_include):
         return False
     if f.title_exclude and _matches_any(title, f.title_exclude):

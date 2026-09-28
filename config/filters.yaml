@@ -116,3 +116,15 @@ location_exclude:
 # services. Dropped 2026-09-16.
 blocked_domains:
   - himalayas.app
+  # Click-out aggregators that freehire republishes. Neither hosts the job: the
+  # link is an affiliate redirect (whatjobs uses /pub_api__cpl__<id>__7065) that
+  # deposits you on whoever actually posted it, so the listing is second-hand and
+  # often a duplicate of one already reachable directly.
+  # Measured 2026-09-28 over postings first seen since 2026-08-31:
+  #   whatjobs.com  472 postings, 77 at 85+, 15 at 95+, 1 visited, 0 APPLIED
+  #   adzuna.com     50 postings, 21 at 85+,  8 at 95+, 0 visited, 1 applied
+  #   everything else 3,817 postings, 115 applied
+  # Cost of this block: the one adzuna application (Sound Decisions, 2026-09-19)
+  # existed ONLY via adzuna and whatjobs, so it would not have been surfaced.
+  - whatjobs.com
+  - adzuna.com

@@ -27,8 +27,9 @@ from .scrapers import (
     fetch_ashby, fetch_greenhouse, fetch_lever, fetch_smartrecruiters, fetch_workday,
 )
 from .store import (
-    connect, count_unscored, filter_new, followups_due, mark_liveness,
-    mark_notified, record_scored, record_unscored, touch_seen,
+    connect, count_unscored, filter_new, followups_due, known_by_job_key,
+    mark_liveness, mark_notified, record_scored,
+    record_unscored, touch_seen,
 )
 
 WEB_HOST = "127.0.0.1"
@@ -130,6 +131,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         all_fps = [p.fingerprint for p in filtered]
         new_fps = filter_new(con, all_fps)
         touch_seen(con, [fp for fp in all_fps if fp not in new_fps])
+        # The same job found by a second source is not new.
+        new_fps -= known_by_job_key(con, [p for p in filtered if p.fingerprint in new_fps])
 
         # Liveness: flag stored postings that vanished from boards we scanned.
         fetched_fps = {p.fingerprint for p in postings}
@@ -305,6 +308,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
         fps = [p.fingerprint for p in filtered]
         new_fps = filter_new(con, fps)
         touch_seen(con, [fp for fp in fps if fp not in new_fps])
+        new_fps -= known_by_job_key(con, [p for p in filtered if p.fingerprint in new_fps])
         # Commit early and after every posting: an open write transaction held
         # across ~20 min of LLM calls would lock the dashboard out of marking
         # postings visited/applied for the whole watch.

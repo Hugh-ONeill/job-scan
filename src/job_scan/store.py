@@ -8,6 +8,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from .config import DATA_DIR
 
@@ -28,6 +29,74 @@ def dedupe_key(company: str | None, title: str | None) -> str:
     c = " ".join((company or "").split()).casefold()
     t = " ".join((title or "").split()).casefold()
     return f"{c}\x1f{t}"
+
+
+# --- job identity across sources -----------------------------------------
+#
+# A fingerprint says where a posting was FOUND (ats:slug:id). The same job
+# reaches the DB through several finders: the Greenhouse scraper and freehire
+# both carried 48 Greenhouse/Ashby/Lever reqs on 2026-10-13, scored twice, and
+# three pairs disagreed on status (Mercury rejected under one row and pending
+# under the other; LaunchDarkly applied via freehire, pending via Greenhouse).
+# The apply URL carries the board's own id, which is the same whoever found it.
+# Modelled on seekter's job_key (github.com/selfishprimate/seekter).
+
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+# Query keys that carry a posting id on company careers sites and Indeed.
+_ID_PARAMS = ("jobid", "job_id", "requisitionid", "reqid", "posting_id", "postingid",
+              "vacancyid", "showjob", "jk", "vjk", "id")
+
+
+def job_key(url: str) -> str:
+    """Identity of the job behind a posting URL, shared across every source
+    that republishes it. "" when the URL carries nothing stable (a bare host).
+
+    Keys are the board's own ids where the board has one (LinkedIn job id,
+    Greenhouse req id, Ashby/Lever UUIDs, Workday requisition, Indeed jk),
+    else the host plus the path without tracking parameters. Measured on
+    6,414 stored URLs: no path-only URL was shared by two different titles."""
+    if not url:
+        return ""
+    u = url.strip()
+    p = urlparse(u if "://" in u else "https://" + u)
+    host = p.netloc.lower().removeprefix("www.")
+    path = p.path
+    q = {k.lower(): v for k, v in parse_qs(p.query).items()}
+
+    if "linkedin.com" in host:
+        m = re.search(r"/jobs/view/(\d+)", path)
+        if m:
+            return f"linkedin:{m.group(1)}"
+        if q.get("currentjobid"):
+            return f"linkedin:{q['currentjobid'][0]}"
+    # Greenhouse embeds on company sites: ?gh_jid=<id> or job_app?token=<id>.
+    for k in ("gh_jid", "token"):
+        if q.get(k) and q[k][0].isdigit():
+            return f"greenhouse:{q[k][0]}"
+    if "greenhouse" in host:
+        m = re.search(r"/jobs/(\d+)", path)
+        if m:
+            return f"greenhouse:{m.group(1)}"
+    m = _UUID.search(path) or (_UUID.search(q["ashby_jid"][0]) if q.get("ashby_jid") else None)
+    if m:
+        return f"uuid:{m.group(0).lower()}"
+    if "myworkdayjobs.com" in host:
+        # .../job/New-York-NY/Full-Stack-Engineer-4_R1002498-1 -> R1002498
+        m = re.search(r"_([A-Za-z]{0,3}-?\d{4,})(?:-\d+)?/?$", path)
+        if m:
+            return f"workday:{host.split('.')[0]}:{m.group(1).upper()}"
+    for k in _ID_PARAMS:
+        v = q.get(k)
+        if v and re.fullmatch(r"[\w-]{4,}", v[0]):
+            return f"{host}:{v[0].lower()}"
+    m = re.search(r"/(\d{6,})(?:[-/]|$)", path)
+    if m:
+        return f"{host}:{m.group(1)}"
+    path = re.sub(r"/(application|apply)/?$", "", path.rstrip("/")).lower()
+    if not path:
+        return ""
+    return f"{host}{path}"
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS postings (
@@ -85,11 +154,14 @@ MIGRATIONS = [
     # sha1 of the normalised description. The same text under DIFFERENT company
     # names is a posting farm, not competing employers.
     ("desc_hash",         "ALTER TABLE postings ADD COLUMN desc_hash TEXT"),
+    # Identity of the job across sources (see job_key()).
+    ("job_key",           "ALTER TABLE postings ADD COLUMN job_key TEXT"),
 ]
 
 POST_MIGRATION_INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_status ON postings(status);
 CREATE INDEX IF NOT EXISTS idx_desc_hash ON postings(desc_hash);
+CREATE INDEX IF NOT EXISTS idx_job_key ON postings(job_key);
 """
 
 
@@ -273,6 +345,8 @@ def _apply_migrations(con: sqlite3.Connection) -> None:
     for sql in BACKFILLS:
         con.execute(sql)
     _merge_wwr_duplicates(con)
+    _backfill_job_keys(con)
+    _merge_job_key_duplicates(con)
 
 
 @contextmanager
@@ -371,11 +445,11 @@ def record_scored(
     con.execute(
         """INSERT INTO postings
            (fingerprint, company, title, url, location, score, rationale,
-            strengths, concerns, description, status, desc_hash,
+            strengths, concerns, description, status, desc_hash, job_key,
             skill_fit, seniority_fit, domain_fit, location_tier,
             posted_at, freshness_days, interview_style,
             first_seen, last_seen, notified)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?,
                    ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
            ON CONFLICT(fingerprint) DO UPDATE SET
              last_seen     = excluded.last_seen,
@@ -391,9 +465,10 @@ def record_scored(
              posted_at     = excluded.posted_at,
              freshness_days = excluded.freshness_days,
              interview_style = excluded.interview_style,
-             desc_hash       = excluded.desc_hash""",
+             desc_hash       = excluded.desc_hash,
+             job_key         = excluded.job_key""",
         (fingerprint, company, title, url, location, score, rationale,
-         s_json, c_json, description, dhash,
+         s_json, c_json, description, dhash, job_key(url),
          skill_fit, seniority_fit, domain_fit, location_tier,
          posted_at, freshness_days, interview_style, now, now),
     )
@@ -563,38 +638,120 @@ def _merge_wwr_duplicates(con: sqlite3.Connection) -> int:
         # status, then the most recently refreshed copy.
         keep = max(rows, key=lambda r: (_STATUS_RANK.get(r["status"] or "pending", 0),
                                         r["last_seen"] or ""))
-        first = min((r["first_seen"] for r in rows if r["first_seen"]), default=keep["first_seen"])
-        last = max((r["last_seen"] for r in rows if r["last_seen"]), default=keep["last_seen"])
-        status = max((r["status"] or "pending" for r in rows),
-                     key=lambda s: _STATUS_RANK.get(s, 0))
-        # Lifecycle data is rare and precious: take it from whichever copy has it.
-        def first_set(col: str):
-            return next((r[col] for r in rows if r[col]), None)
-
-        for r in rows:
-            if r["fingerprint"] != new_fp:
-                con.execute("DELETE FROM postings WHERE fingerprint = ?", (r["fingerprint"],))
-        con.execute(
-            """INSERT INTO postings (fingerprint, company, title, url, location, score,
-                   skill_fit, seniority_fit, domain_fit, location_tier, posted_at,
-                   freshness_days, interview_style, rationale, strengths, concerns,
-                   description, status, first_seen, last_seen, notified, gone, gone_at,
-                   applied_at, status_updated_at, followups, notes)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (new_fp, keep["company"], keep["title"], keep["url"], keep["location"],
-             keep["score"], keep["skill_fit"], keep["seniority_fit"], keep["domain_fit"],
-             keep["location_tier"], keep["posted_at"], keep["freshness_days"],
-             keep["interview_style"], keep["rationale"], keep["strengths"], keep["concerns"],
-             keep["description"], status, first, last,
-             max(int(r["notified"] or 0) for r in rows),
-             min(int(r["gone"] or 0) for r in rows), first_set("gone_at"),
-             first_set("applied_at"), first_set("status_updated_at"),
-             first_set("followups"), first_set("notes")),
-        )
+        _merge_group(con, rows, new_fp, keep)
         merged += len(rows) - 1
     if merged:
         log.info("re-keyed WeWorkRemotely fingerprints, merging %d duplicate row(s)", merged)
     return merged
+
+
+def _merge_group(con: sqlite3.Connection, rows: list[sqlite3.Row], new_fp: str,
+                 keep: sqlite3.Row) -> None:
+    """Fold `rows` (copies of one job) into a single row keyed `new_fp`.
+
+    `keep` supplies the descriptive columns; the merged row takes the
+    furthest-along status, the widest seen-window, and whichever copy has
+    lifecycle data (applied_at, notes, follow-ups), which is rare and precious.
+    """
+    first = min((r["first_seen"] for r in rows if r["first_seen"]), default=keep["first_seen"])
+    last = max((r["last_seen"] for r in rows if r["last_seen"]), default=keep["last_seen"])
+    status = max((r["status"] or "pending" for r in rows),
+                 key=lambda s: _STATUS_RANK.get(s, 0))
+
+    def first_set(col: str):
+        return next((r[col] for r in rows if r[col]), None)
+
+    for r in rows:
+        con.execute("DELETE FROM postings WHERE fingerprint = ?", (r["fingerprint"],))
+    con.execute(
+        """INSERT INTO postings (fingerprint, company, title, url, location, score,
+               skill_fit, seniority_fit, domain_fit, location_tier, posted_at,
+               freshness_days, interview_style, rationale, strengths, concerns,
+               description, status, first_seen, last_seen, notified, gone, gone_at,
+               applied_at, status_updated_at, followups, notes, desc_hash, job_key)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (new_fp, keep["company"], keep["title"], keep["url"], keep["location"],
+         keep["score"], keep["skill_fit"], keep["seniority_fit"], keep["domain_fit"],
+         keep["location_tier"], keep["posted_at"], keep["freshness_days"],
+         keep["interview_style"], keep["rationale"], keep["strengths"], keep["concerns"],
+         keep["description"], status, first, last,
+         max(int(r["notified"] or 0) for r in rows),
+         min(int(r["gone"] or 0) for r in rows), first_set("gone_at"),
+         first_set("applied_at"), first_set("status_updated_at"),
+         first_set("followups"), first_set("notes"),
+         keep["desc_hash"] or desc_hash(keep["description"] or ""), job_key(keep["url"])),
+    )
+
+
+def _backfill_job_keys(con: sqlite3.Connection) -> None:
+    rows = con.execute("SELECT fingerprint, url FROM postings WHERE job_key IS NULL").fetchall()
+    if rows:
+        con.executemany("UPDATE postings SET job_key = ? WHERE fingerprint = ?",
+                        [(job_key(r["url"]), r["fingerprint"]) for r in rows])
+
+
+def _source_rank(fingerprint: str) -> int:
+    """Prefer the row the board's own scraper owns: its liveness is tracked."""
+    return 1 if fingerprint.split(":", 1)[0] in LIVENESS_ATS else 0
+
+
+def _merge_job_key_duplicates(con: sqlite3.Connection) -> int:
+    """Fold rows that share a job_key under different fingerprints into one.
+
+    Idempotent and cheap once clean (one indexed GROUP BY). The kept row is
+    the board's own scraper's where there is one, then the furthest-along
+    status, then the most recently refreshed copy.
+    """
+    keys = [r[0] for r in con.execute(
+        "SELECT job_key FROM postings WHERE job_key != '' "
+        "GROUP BY job_key HAVING COUNT(*) > 1")]
+    merged = 0
+    for k in keys:
+        rows = con.execute("SELECT * FROM postings WHERE job_key = ?", (k,)).fetchall()
+        keep = max(rows, key=lambda r: (_source_rank(r["fingerprint"]),
+                                        _STATUS_RANK.get(r["status"] or "pending", 0),
+                                        r["last_seen"] or ""))
+        _merge_group(con, rows, keep["fingerprint"], keep)
+        merged += len(rows) - 1
+    if merged:
+        log.info("merged %d posting row(s) that were the same job under another source", merged)
+    return merged
+
+
+def known_by_job_key(con: sqlite3.Connection, postings) -> set[str]:
+    """Fingerprints in `postings` (all new to the DB) whose job is already
+    stored under another source's fingerprint, or appears twice in the batch.
+
+    Each stored twin is touched as seen. When the newcomer is the board's own
+    scraper and the stored row is an aggregator's, the row is re-keyed to the
+    scraper's fingerprint and URL so liveness tracking takes it over; nothing
+    else about it (score, status, notes) changes.
+    """
+    skipped: set[str] = set()
+    in_batch: dict[str, str] = {}   # job_key -> fingerprint chosen for this batch
+    now = _now()
+    for p in sorted(postings, key=lambda p: -_source_rank(p.fingerprint)):
+        k = job_key(p.url)
+        if not k:
+            continue
+        if k in in_batch:
+            skipped.add(p.fingerprint)
+            continue
+        row = con.execute(
+            "SELECT fingerprint FROM postings WHERE job_key = ? AND fingerprint != ? LIMIT 1",
+            (k, p.fingerprint)).fetchone()
+        if row is None:
+            in_batch[k] = p.fingerprint
+            continue
+        old = row["fingerprint"]
+        if _source_rank(p.fingerprint) > _source_rank(old):
+            con.execute("UPDATE postings SET fingerprint = ?, url = ?, last_seen = ? "
+                        "WHERE fingerprint = ?", (p.fingerprint, p.url, now, old))
+            log.info("re-keyed %s -> %s (same job, board's own scraper)", old, p.fingerprint)
+        else:
+            con.execute("UPDATE postings SET last_seen = ? WHERE fingerprint = ?", (now, old))
+        skipped.add(p.fingerprint)
+    return skipped
 
 
 def record_unscored(con: sqlite3.Connection, posting) -> None:
@@ -608,11 +765,12 @@ def record_unscored(con: sqlite3.Connection, posting) -> None:
     con.execute(
         """INSERT INTO postings
            (fingerprint, company, title, url, location, description,
-            posted_at, status, first_seen, last_seen, notified)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, 0)
+            posted_at, job_key, status, first_seen, last_seen, notified)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, 0)
            ON CONFLICT(fingerprint) DO NOTHING""",
         (posting.fingerprint, posting.company, posting.title, posting.url,
-         posting.location, posting.description, posting.posted_at, now, now),
+         posting.location, posting.description, posting.posted_at,
+         job_key(posting.url), now, now),
     )
 
 

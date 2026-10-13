@@ -2,6 +2,10 @@
 Description=Daily job posting scan against resume
 After=network-online.target
 Wants=network-online.target
+# When the morning report is written (success or not), open the day's LeetCode
+# SRS session in a kitty window (unit lives in ~/Developer/leetcode-srs/systemd).
+OnSuccess=leetcode-srs-daily.service
+OnFailure=leetcode-srs-daily.service
 
 [Service]
 Type=oneshot

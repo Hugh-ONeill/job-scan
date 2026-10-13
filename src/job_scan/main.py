@@ -18,6 +18,7 @@ from .config import (
 )
 from .filter import passes
 from .interview_style import load_no_whiteboard
+from .flags import applicant_instructions, perm_notice
 from .matcher import combine, freshness_days, score_posting
 from .report import Scored, notify, notify_deferred, notify_failure, notify_watch, write_report
 from .resident import apply_resident
@@ -28,7 +29,7 @@ from .scrapers import (
 )
 from .store import (
     connect, count_unscored, filter_new, followups_due, known_by_job_key,
-    mark_liveness, mark_notified, record_scored,
+    mark_liveness, mark_notified, record_dismissed, record_scored,
     record_unscored, touch_seen,
 )
 
@@ -169,6 +170,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         failed = 0
         to_score = [] if defer else new_postings
         for i, p in enumerate(to_score, 1):
+            if _auto_dismiss(con, p):
+                continue
             log.info("[%d/%d] scoring %s | %s", i, len(to_score), p.company, p.title)
             try:
                 m = score_posting(settings.ollama, resume, p, settings.scoring,
@@ -244,10 +247,21 @@ def _drop_stale(postings: list[Posting], settings) -> list[Posting]:
     return kept
 
 
+def _auto_dismiss(con, p: Posting) -> bool:
+    """Postings the scanner rejects on sight, stored with the reason so they
+    are never fetched or scored again."""
+    why = perm_notice(p.description)
+    if why:
+        log.info("auto-dismissed %s | %s: %s", p.company, p.title, why.split(":")[0])
+        record_dismissed(con, p, why)
+        return True
+    return False
+
+
 def _record(con, p: Posting, m) -> None:
-    # Flags the source or the body raised come first: a repost
+    # Flags the source or the body raised come first: a trap or a repost
     # matters more than any gap the model found.
-    concerns = list(p.flags) + list(m.concerns)
+    concerns = list(p.flags) + applicant_instructions(p.description) + list(m.concerns)
     record_scored(
         con, p.fingerprint, p.company, p.title, p.url, p.location,
         m.score, m.rationale,
@@ -344,6 +358,9 @@ def cmd_watch(args: argparse.Namespace) -> int:
         no_whiteboard = load_no_whiteboard()
         hits: list[Scored] = []
         for i, p in enumerate(new, 1):
+            if _auto_dismiss(con, p):
+                con.commit()
+                continue
             log.info("[%d/%d] scoring %s | %s", i, len(new), p.company, p.title)
             try:
                 m = score_posting(settings.ollama, resume, p, settings.scoring,

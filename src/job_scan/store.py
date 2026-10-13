@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .config import DATA_DIR
+from .flags import INSTRUCTION_PREFIX, applicant_instructions, perm_notice
 
 DB_PATH = DATA_DIR / "seen.db"
 
@@ -347,6 +348,8 @@ def _apply_migrations(con: sqlite3.Connection) -> None:
     _merge_wwr_duplicates(con)
     _backfill_job_keys(con)
     _merge_job_key_duplicates(con)
+    _once(con, "perm_dismissals_v1", _backfill_perm_dismissals)
+    _once(con, "instruction_flags_v1", _backfill_instruction_flags)
 
 
 @contextmanager
@@ -683,6 +686,57 @@ def _merge_group(con: sqlite3.Connection, rows: list[sqlite3.Row], new_fp: str,
     )
 
 
+def _once(con: sqlite3.Connection, name: str, fn) -> None:
+    """Run a Python-side backfill exactly once per DB (a full-table regex
+    pass is cheap once, not on every dashboard request). Bump the name's
+    version suffix to run a changed pattern set again."""
+    con.execute("CREATE TABLE IF NOT EXISTS backfills (name TEXT PRIMARY KEY, at TEXT)")
+    if con.execute("SELECT 1 FROM backfills WHERE name = ?", (name,)).fetchone():
+        return
+    fn(con)
+    con.execute("INSERT INTO backfills (name, at) VALUES (?, ?)", (name, _now()))
+
+
+def _prepend_concerns(con: sqlite3.Connection, fingerprint: str, raw: str | None,
+                      new: list[str]) -> None:
+    import json
+    try:
+        existing = json.loads(raw) if raw else []
+    except (TypeError, ValueError):
+        existing = []
+    con.execute("UPDATE postings SET concerns = ? WHERE fingerprint = ?",
+                (json.dumps(new + [c for c in existing if c not in new]), fingerprint))
+
+
+def _backfill_perm_dismissals(con: sqlite3.Connection) -> None:
+    rows = con.execute("SELECT fingerprint, description, concerns FROM postings "
+                       "WHERE status = 'pending' AND description LIKE '%foreign%equivalent%'").fetchall()
+    n = 0
+    for r in rows:
+        why = perm_notice(r["description"] or "")
+        if not why:
+            continue
+        _prepend_concerns(con, r["fingerprint"], r["concerns"], [why])
+        set_status(con, r["fingerprint"], "dismissed")
+        n += 1
+    if n:
+        log.info("auto-dismissed %d stored PERM labor-certification notice(s)", n)
+
+
+def _backfill_instruction_flags(con: sqlite3.Connection) -> None:
+    n = 0
+    for r in con.execute("SELECT fingerprint, description, concerns FROM postings "
+                         "WHERE description IS NOT NULL").fetchall():
+        if r["concerns"] and INSTRUCTION_PREFIX in r["concerns"]:
+            continue
+        found = applicant_instructions(r["description"])
+        if found:
+            _prepend_concerns(con, r["fingerprint"], r["concerns"], found)
+            n += 1
+    if n:
+        log.info("flagged applicant instructions on %d stored posting(s)", n)
+
+
 def _backfill_job_keys(con: sqlite3.Connection) -> None:
     rows = con.execute("SELECT fingerprint, url FROM postings WHERE job_key IS NULL").fetchall()
     if rows:
@@ -752,6 +806,16 @@ def known_by_job_key(con: sqlite3.Connection, postings) -> set[str]:
             con.execute("UPDATE postings SET last_seen = ? WHERE fingerprint = ?", (now, old))
         skipped.add(p.fingerprint)
     return skipped
+
+
+def record_dismissed(con: sqlite3.Connection, posting, why: str) -> None:
+    """Store a posting the scanner itself rejected, with the reason, and
+    never score it: score 0 keeps it under every cutoff and out of the
+    unscored backlog, status 'dismissed' keeps it off the dashboard."""
+    record_scored(con, posting.fingerprint, posting.company, posting.title, posting.url,
+                  posting.location, 0, why, strengths=[], concerns=[why],
+                  description=posting.description, posted_at=posting.posted_at)
+    set_status(con, posting.fingerprint, "dismissed")
 
 
 def record_unscored(con: sqlite3.Connection, posting) -> None:

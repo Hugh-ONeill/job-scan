@@ -133,6 +133,8 @@ aggregators:
   freehire_days: 7        # server-side freshness window (posted_within_days)
   freehire_countries:     # country facet, ISO codes ("us", not "United States")
     - us
+  freehire_pages: 2       # pages of 100 per query, relevance order (page 2 still
+                          # carried 25 Greenhouse postings on 2026-10-13)
   # LinkedIn public jobs-guest endpoints (unauthenticated HTML — no account,
   # cookie, or credential is involved, so there is nothing here to suspend).
   # The real limit is IP-level throttling: if LinkedIn starts answering 429,

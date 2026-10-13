@@ -4,7 +4,7 @@ from __future__ import annotations
 import html
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Iterable
 
@@ -25,6 +25,9 @@ class Posting:
     description: str  # plain text
     posted_at: str = ""  # ISO-8601 original publish time, "" if unknown
     priority: bool = False
+    # Concerns the source itself raised (a repost, a mass posting); stored
+    # ahead of the model's own concerns.
+    flags: list[str] = field(default_factory=list)
 
     @property
     def fingerprint(self) -> str:

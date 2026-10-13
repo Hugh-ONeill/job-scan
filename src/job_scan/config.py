@@ -154,6 +154,8 @@ class Aggregators:
     # heavily international, so unfiltered pulls waste most of the per-query
     # limit on roles the location filters reject anyway.
     freehire_countries: list[str] = field(default_factory=lambda: ["us"])
+    # Relevance-ordered pages of 100 read per query (one request each).
+    freehire_pages: int = 2
     # LinkedIn public jobs-guest endpoints. Off by default: automated access is
     # against LinkedIn ToS, so enabling it is an explicit personal-use choice —
     # and the knobs below exist to keep the volume low (see linkedin.py).
@@ -309,6 +311,7 @@ def load_aggregators() -> Aggregators:
         freehire=bool(a.get("freehire", defaults.freehire)),
         freehire_days=int(a.get("freehire_days", defaults.freehire_days)),
         freehire_countries=list(a.get("freehire_countries", defaults.freehire_countries) or []),
+        freehire_pages=int(a.get("freehire_pages", defaults.freehire_pages)),
         linkedin=bool(a.get("linkedin", defaults.linkedin)),
         linkedin_locations=list(a.get("linkedin_locations") or defaults.linkedin_locations),
         linkedin_days=int(a.get("linkedin_days", defaults.linkedin_days)),

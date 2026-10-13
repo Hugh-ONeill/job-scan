@@ -245,10 +245,13 @@ def _drop_stale(postings: list[Posting], settings) -> list[Posting]:
 
 
 def _record(con, p: Posting, m) -> None:
+    # Flags the source or the body raised come first: a repost
+    # matters more than any gap the model found.
+    concerns = list(p.flags) + list(m.concerns)
     record_scored(
         con, p.fingerprint, p.company, p.title, p.url, p.location,
         m.score, m.rationale,
-        strengths=m.strengths, concerns=m.concerns, description=p.description,
+        strengths=m.strengths, concerns=concerns, description=p.description,
         skill_fit=m.skill_fit, seniority_fit=m.seniority_fit,
         domain_fit=m.domain_fit, location_tier=m.location_tier,
         posted_at=p.posted_at, freshness_days=m.freshness_days,

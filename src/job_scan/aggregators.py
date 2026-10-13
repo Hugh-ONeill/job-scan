@@ -181,46 +181,79 @@ def _freehire(agg: Aggregators) -> list[Posting]:
     """freehire.me tech-job aggregator — public REST API, JSON, no key.
 
     The /agent/jobs/search variant hydrates each hit's full description
-    server-side (asked for as markdown), so one request per query reads every
-    result without a follow-up detail call per hit.
+    server-side (asked for as markdown), so one request per page reads every
+    result without a follow-up detail call per hit. Results come in relevance
+    order, 100 per page; `freehire_pages` pages are read per query (measured
+    2026-10-13: page 2 of "full stack engineer" still held 25 Greenhouse and
+    16 Oracle postings). `include_description` and `semantic_ratio` are
+    reported back as ignored by this endpoint, so they are not sent.
+
+    Per-record fields the API computes and this reads (seekter's notes,
+    verified live): `closed_at` (dropped), `reality` (its own first-seen age,
+    a repost flag, and how many postings share this text), `created_at` (when
+    freehire first indexed it). A reposted job carries a fresh posted_at but
+    an old created_at: 26 of 300 results inside a 7-day window on 2026-10-13.
+    The earlier of the two is the posting's real age.
     """
     seen: dict[str, Posting] = {}
     for term in agg.queries:
-        params: list[tuple[str, str]] = [
-            ("q", term),
-            ("limit", str(min(agg.max_per_source, 100))),
-            ("semantic_ratio", "0"),  # keyword search; the semantic index is opt-in
-            ("include_description", "true"),
-            ("description_format", "markdown"),
-            ("posted_within_days", str(agg.freehire_days)),
-        ]
-        # Repeated ?countries=<iso> params; the facet vocabulary is ISO codes.
-        params += [("countries", c) for c in agg.freehire_countries]
-        env = requests.get(
-            "https://freehire.me/api/v1/agent/jobs/search",
-            params=params, headers=UA, timeout=TIMEOUT,
-        ).json()
-        for j in env.get("data", []) or []:
-            slug = str(j.get("public_slug") or "")
-            if not slug or slug in seen:
-                continue
-            loc = j.get("location") or ""
-            if (j.get("work_mode") or "").lower() == "remote":
-                loc = f"Remote · {loc}" if loc and loc.lower() != "remote" else "Remote"
-            seen[slug] = Posting(
-                company=j.get("company") or "(freehire)",
-                ats="freehire",
-                slug="freehire",
-                posting_id=slug,
-                title=(j.get("title") or "").strip(),
-                location=loc,
-                url=j.get("url") or f"https://freehire.me/jobs/{slug}",
-                # Already markdown per description_format; html_to_markdown is a
-                # no-op on tag-free text and cleans up if HTML slips through.
-                description=html_to_markdown(j.get("description") or ""),
-                posted_at=normalize_date(j.get("posted_at") or j.get("created_at")),
-            )
+        for page in range(max(1, agg.freehire_pages)):
+            params: list[tuple[str, str]] = [
+                ("q", term),
+                ("limit", "100"),
+                ("offset", str(page * 100)),
+                ("description_format", "markdown"),
+                ("posted_within_days", str(agg.freehire_days)),
+            ]
+            # Repeated ?countries=<iso> params; the facet vocabulary is ISO codes.
+            params += [("countries", c) for c in agg.freehire_countries]
+            env = requests.get(
+                "https://freehire.me/api/v1/agent/jobs/search",
+                params=params, headers=UA, timeout=TIMEOUT,
+            ).json()
+            rows = env.get("data", []) or []
+            for j in rows:
+                slug = str(j.get("public_slug") or "")
+                if not slug or slug in seen or j.get("closed_at"):
+                    continue
+                loc = j.get("location") or ""
+                if (j.get("work_mode") or "").lower() == "remote":
+                    loc = f"Remote · {loc}" if loc and loc.lower() != "remote" else "Remote"
+                posted = normalize_date(j.get("posted_at"))
+                indexed = normalize_date(j.get("created_at"))
+                seen[slug] = Posting(
+                    company=j.get("company") or "(freehire)",
+                    ats="freehire",
+                    slug="freehire",
+                    posting_id=slug,
+                    title=(j.get("title") or "").strip(),
+                    location=loc,
+                    url=j.get("url") or f"https://freehire.me/jobs/{slug}",
+                    # Already markdown per description_format; html_to_markdown is a
+                    # no-op on tag-free text and cleans up if HTML slips through.
+                    description=html_to_markdown(j.get("description") or ""),
+                    posted_at=min((d for d in (posted, indexed) if d), default=""),
+                    flags=_freehire_flags(j.get("reality") or {}, j.get("source") or ""),
+                )
+            if len(rows) < 100:
+                break
     return list(seen.values())
+
+
+def _freehire_flags(reality: dict, source: str) -> list[str]:
+    """Concerns freehire's own `reality` block supports."""
+    out: list[str] = []
+    age = reality.get("age_days")
+    reposts = reality.get("repost_count") or 0
+    if reality.get("fake_freshness") and age:
+        out.append(f"Repost: the listed post date is new but freehire first indexed this "
+                   f"posting {age} days ago (seen {reposts} time{'s' if reposts != 1 else ''}).")
+    mass = reality.get("mass_posting_count") or 0
+    if mass >= 3:
+        out.append(f"Mass posting: freehire counts {mass} postings sharing this text "
+                   f"(one hire advertised under many titles or cities, or a farm). "
+                   f"Verify the employer before applying.")
+    return out
 
 
 _WWR_CATEGORIES = [

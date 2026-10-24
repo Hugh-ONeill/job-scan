@@ -20,6 +20,12 @@ companies:
 - name: B12
   ats: greenhouse
   slug: b12
+- name: Badoo
+  ats: ashby
+  slug: bumbleinc
+- name: Bloom Works
+  ats: greenhouse
+  slug: bloomworks
 - name: BrowserStack
   ats: workday
   slug: browserstack
@@ -43,15 +49,12 @@ companies:
 - name: Clara Lending
   ats: greenhouse
   slug: clara
-- name: Clarisights
-  ats: ashby
-  slug: clarisights
 - name: Clipboard
   ats: ashby
   slug: clipboard
 - name: Close
   ats: ashby
-  slug: Close
+  slug: close
 - name: Collabora
   ats: lever
   slug: collabora
@@ -85,6 +88,9 @@ companies:
 - name: Goalbook
   ats: lever
   slug: goalbookapp-2
+- name: GoCardless
+  ats: greenhouse
+  slug: gocardless
 - name: Hinge Health
   ats: ashby
   slug: hinge-health
@@ -111,12 +117,18 @@ companies:
 - name: Knock.com
   ats: greenhouse
   slug: knock
+- name: Kong
+  ats: ashby
+  slug: kong
 - name: LaunchDarkly
   ats: greenhouse
   slug: launchdarkly
 - name: Lob
   ats: greenhouse
   slug: lob
+- name: Mattermost
+  ats: greenhouse
+  slug: mattermost
 - name: Mux
   ats: ashby
   slug: mux
@@ -147,7 +159,7 @@ companies:
   ats: ashby
   slug: radiant
 - name: Philo
-  ats: greenhouse
+  ats: ashby
   slug: philo
 - name: Pie Insurance
   ats: greenhouse
@@ -155,6 +167,11 @@ companies:
 - name: Pleo
   ats: ashby
   slug: pleo
+- name: PremiumBeat
+  ats: workday
+  slug: shutterstock
+  host: shutterstock.wd1.myworkdayjobs.com
+  board: ShutterstockCareers
 - name: Prokeep
   ats: ashby
   slug: prokeep
@@ -182,11 +199,6 @@ companies:
   slug: travelers
   host: travelers.wd5.myworkdayjobs.com
   board: SimplyBusinesssExternal
-- name: Slack
-  ats: workday
-  slug: salesforce
-  host: salesforce.wd12.myworkdayjobs.com
-  board: Slack
 - name: Smartly.io
   ats: greenhouse
   slug: smartlyio
@@ -204,9 +216,6 @@ companies:
   slug: springernature
   host: springernature.wd3.myworkdayjobs.com
   board: SpringerNatureCareers
-- name: Surglogs
-  ats: lever
-  slug: surglogs
 - name: Swisscom
   ats: workday
   slug: swisscom
@@ -229,6 +238,9 @@ companies:
   slug: usertesting
   host: usertesting.wd12.myworkdayjobs.com
   board: UserTesting
+- name: VTEX
+  ats: greenhouse
+  slug: vtex
 - name: Wealthsimple
   ats: ashby
   slug: wealthsimple

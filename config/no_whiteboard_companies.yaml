@@ -14,6 +14,9 @@ companies:
   slug: accenture
   host: accenture.wd103.myworkdayjobs.com
   board: AccentureCareers
+- name: Algolia
+  ats: greenhouse
+  slug: algolia
 - name: Almabase
   ats: ashby
   slug: Almabase
@@ -26,11 +29,6 @@ companies:
 - name: Bloom Works
   ats: greenhouse
   slug: bloomworks
-- name: BrowserStack
-  ats: workday
-  slug: browserstack
-  host: browserstack.wd3.myworkdayjobs.com
-  board: External
 - name: Bugcrowd
   ats: greenhouse
   slug: bugcrowd
@@ -138,9 +136,6 @@ companies:
 - name: Nova Credit
   ats: greenhouse
   slug: novacredit
-- name: Noyo
-  ats: ashby
-  slug: noyo
 - name: Octopus Energy
   ats: lever
   slug: octoenergy
@@ -167,11 +162,6 @@ companies:
 - name: Pleo
   ats: ashby
   slug: pleo
-- name: PremiumBeat
-  ats: workday
-  slug: shutterstock
-  host: shutterstock.wd1.myworkdayjobs.com
-  board: ShutterstockCareers
 - name: Prokeep
   ats: ashby
   slug: prokeep
@@ -199,6 +189,11 @@ companies:
   slug: travelers
   host: travelers.wd5.myworkdayjobs.com
   board: SimplyBusinesssExternal
+- name: Slack
+  ats: workday
+  slug: salesforce
+  host: salesforce.wd12.myworkdayjobs.com
+  board: Slack
 - name: Smartly.io
   ats: greenhouse
   slug: smartlyio
@@ -244,3 +239,6 @@ companies:
 - name: Wealthsimple
   ats: ashby
   slug: wealthsimple
+- name: Zapier
+  ats: ashby
+  slug: zapier

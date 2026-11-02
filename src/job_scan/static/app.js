@@ -407,7 +407,6 @@ async function loadStats() {
 let postings = [];
 let openFps = new Set();
 let expandedGroups = new Set();
-let sortMode = "score";  // "score" = score then date · "date" = date then score
 
 async function load() {
   const params = new URLSearchParams();
@@ -430,8 +429,10 @@ async function load() {
 // ties by freshness; "date" leads with freshness and breaks ties by score.
 // Score no longer bakes in age, so the date mode is the way to surface the
 // newest roles within the cluster of equal-fit scores.
+// The dropdown is the source of truth: Firefox restores its previous value on
+// refresh without firing "change", so a mirrored variable would drift from it.
 function postingCmp(a, b) {
-  if (sortMode === "date") {
+  if (sortModeEl.value === "date") {
     return (freshOf(a) - freshOf(b)) || (b.score - a.score);
   }
   return (b.score - a.score) || (freshOf(a) - freshOf(b));
@@ -469,7 +470,7 @@ function renderGroups() {
 
 minScoreEl.addEventListener("change", load);
 topPerCompanyEl.addEventListener("change", renderGroups);
-sortModeEl.addEventListener("change", () => { sortMode = sortModeEl.value; renderGroups(); });
+sortModeEl.addEventListener("change", renderGroups);
 qEl.addEventListener("input", debounce(load, 200));
 statusChecks.forEach(c => c.addEventListener("change", load));
 

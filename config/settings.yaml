@@ -1,11 +1,11 @@
 # job-scan settings
 
-# The live resume, kept in LaTeX at ~/Documents/resume.tex and compiled to PDF.
+# The live resume, kept in LaTeX at ~/Documents/job-search/resume.tex and compiled to PDF.
 # Was pointing at ~/Downloads/Resume.pdf (2026-05-28) until 2026-09-16, which
 # meant every posting was being scored against a resume four months stale: no
 # Hibernate, Selenium, microservices, REST APIs, C#, Jenkins, Jira/Confluence,
 # and no career-break section.
-resume_path: ~/Documents/resume.pdf
+resume_path: ~/Documents/job-search/resume.pdf
 
 # Ollama model used for matching. Reuses your local Gemma.
 ollama:

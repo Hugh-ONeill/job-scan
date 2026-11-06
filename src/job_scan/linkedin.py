@@ -12,6 +12,8 @@ a polite pause between requests. Keep it that way.
 """
 from __future__ import annotations
 
+from typing import Any
+
 import html as html_mod
 import logging
 import random
@@ -148,11 +150,40 @@ _DESC_START = re.compile(r'class="(?:show-more-less-html__markup|description__te
 _CLOSED = re.compile(r"closed-job__flavor|no longer accepting applications", re.I)
 
 
+# The criteria box under the description: <h3 ...criteria-subheader> Seniority
+# level </h3> <span ...criteria-text> Entry level </span>. "Not Applicable" is
+# LinkedIn's blank, so it is dropped.
+_CRITERION = re.compile(
+    r'job-criteria-subheader">\s*([^<]+?)\s*</h3>\s*<span[^>]*job-criteria-text[^>]*>\s*([^<]+?)\s*</span>',
+    re.I)
+_CRITERIA_KEYS = {"seniority level": "seniority_label", "employment type": "employment_type"}
+# Top-card caption: "140 applicants", "Over 200 applicants", "Be among the
+# first 25 applicants". The EEO boilerplate also says "applicants", so only the
+# captioned element counts.
+_APPLICANTS = re.compile(r'num-applicants__caption[^>]*>\s*([^<]*?applicants?)\s*<', re.I)
+
+
+def parse_listing_meta(page: str) -> dict[str, str]:
+    """Seniority level, employment type and applicant caption from a detail
+    page, keyed by store.SOURCE_META_COLUMNS. Missing pieces are left out."""
+    meta: dict[str, str] = {}
+    for label, value in _CRITERION.findall(page):
+        col = _CRITERIA_KEYS.get(html_mod.unescape(label).strip().casefold())
+        value = html_mod.unescape(value).strip()
+        if col and value and value.casefold() != "not applicable":
+            meta[col] = value
+    m = _APPLICANTS.search(page)
+    if m:
+        meta["applicants"] = " ".join(html_mod.unescape(m.group(1)).split())
+    return meta
+
+
 def fetch_detail(job_id: str) -> dict | None:
     """Fetch + parse one job's guest detail page.
 
     Returns None for a 404 or a posting no longer accepting applications;
-    otherwise {"description": markdown} (empty string if the markup drifted).
+    otherwise {"description": markdown, "meta": parse_listing_meta(page)}
+    (description is "" if the markup drifted).
     """
     page = _get(f"{DETAIL_URL}/{job_id}", {})
     if not page:
@@ -163,7 +194,7 @@ def fetch_detail(job_id: str) -> dict | None:
         return None
     desc_html = (_div_content(page, "show-more-less-html__markup")
                  or _div_content(page, "description__text"))
-    return {"description": html_to_markdown(desc_html)}
+    return {"description": html_to_markdown(desc_html), "meta": parse_listing_meta(page)}
 
 
 # --- source entry point -------------------------------------------------------
@@ -213,7 +244,7 @@ def fetch_linkedin(
     hydrated = 0
     prefiltered = 0
     for c in cards.values():
-        base = dict(
+        base: dict[str, Any] = dict(
             company=c["company"] or "(LinkedIn)",
             ats="linkedin", slug="search", posting_id=c["id"],
             title=c["title"], location=c["location"],
@@ -246,7 +277,7 @@ def fetch_linkedin(
         hydrated += 1
         if d is None:
             continue  # 404 or no longer accepting applications
-        out.append(Posting(description=d["description"], **base))
+        out.append(Posting(description=d["description"], source_meta=d.get("meta") or {}, **base))
     n_known = len(known & {f"linkedin:search:{c}" for c in cards})
     capped = max(0, len(cards) - n_known - prefiltered - hydrated)
     log.info("linkedin: %d postings — %d details fetched, %d already stored, "

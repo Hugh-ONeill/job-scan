@@ -158,8 +158,11 @@ def _entry(s: Scored, compact: bool = False) -> list[str]:
     head = f"### [{p.company}] {p.title} — **{m.score}**"
     style = f" · 🤝 {m.interview_style}" if getattr(m, "interview_style", "") else ""
     repeat = f" · **↺ {s.applied_before}**" if s.applied_before else ""
+    listing = " · ".join(v for v in (p.source_meta.get(k) for k in
+                                     ("seniority_label", "employment_type", "applicants")) if v)
+    listing = f" · {listing}" if listing else ""
     meta = (f"*{p.location or '(location unspecified)'}*{_age_str(m.freshness_days)}{style}"
-            f"{repeat} · [posting]({p.url})")
+            f"{repeat}{listing} · [posting]({p.url})")
     body = [head, "", meta, "", f"> {m.rationale}" if m.rationale else ""]
     if compact:
         return [l for l in body if l != ""]

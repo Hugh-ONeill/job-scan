@@ -28,6 +28,10 @@ class Posting:
     # Concerns the source itself raised (a repost, a mass posting); stored
     # ahead of the model's own concerns.
     flags: list[str] = field(default_factory=list)
+    # What the source lists beside the description, keyed by
+    # store.SOURCE_META_COLUMNS (LinkedIn: seniority_label, employment_type,
+    # applicants). Display only.
+    source_meta: dict[str, str] = field(default_factory=dict)
 
     @property
     def fingerprint(self) -> str:

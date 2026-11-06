@@ -30,7 +30,8 @@ from .scrapers import (
 from .store import (
     applied_before, connect, count_unscored, filter_new, followups_due,
     known_by_job_key, mark_liveness, mark_notified, prior_applications,
-    record_dismissed, record_scored, record_unscored, touch_seen,
+    record_dismissed, record_scored, record_source_meta, record_unscored,
+    touch_seen,
 )
 
 WEB_HOST = "127.0.0.1"
@@ -156,6 +157,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                         reason, len(new_postings))
             for p in new_postings:
                 record_unscored(con, p)
+                record_source_meta(con, p)
             backlog = count_unscored(con)
         else:
             apply_resident(settings.ollama)
@@ -273,6 +275,7 @@ def _record(con, p: Posting, m) -> None:
         posted_at=p.posted_at, freshness_days=m.freshness_days,
         interview_style=m.interview_style,
     )
+    record_source_meta(con, p)
 
 
 def _unit_active(unit: str) -> bool:

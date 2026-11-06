@@ -219,6 +219,13 @@ MIGRATIONS = [
     ("desc_hash",         "ALTER TABLE postings ADD COLUMN desc_hash TEXT"),
     # Identity of the job across sources (see job_key()).
     ("job_key",           "ALTER TABLE postings ADD COLUMN job_key TEXT"),
+    # What the source page lists beside the description (LinkedIn's criteria
+    # box and applicant caption). Display only: never fed to the matcher, whose
+    # seniority rubric is deliberately its own. applicants is a snapshot taken
+    # when the posting was fetched.
+    ("seniority_label",   "ALTER TABLE postings ADD COLUMN seniority_label TEXT"),
+    ("employment_type",   "ALTER TABLE postings ADD COLUMN employment_type TEXT"),
+    ("applicants",        "ALTER TABLE postings ADD COLUMN applicants TEXT"),
 ]
 
 POST_MIGRATION_INDEXES = """
@@ -897,6 +904,23 @@ def record_unscored(con: sqlite3.Connection, posting) -> None:
         (posting.fingerprint, posting.company, posting.title, posting.url,
          posting.location, posting.description, posting.posted_at,
          job_key(posting.url), now, now),
+    )
+
+
+SOURCE_META_COLUMNS = ("seniority_label", "employment_type", "applicants")
+
+
+def record_source_meta(con: sqlite3.Connection, posting) -> None:
+    """Store what the source listed beside the description, for display.
+    Only keys in SOURCE_META_COLUMNS with a value are written, so a posting
+    re-fetched without the box keeps what it had."""
+    meta: dict[str, str] = getattr(posting, "source_meta", None) or {}
+    cols = [c for c in SOURCE_META_COLUMNS if meta.get(c)]
+    if not cols:
+        return
+    con.execute(
+        f"UPDATE postings SET {', '.join(f'{c} = ?' for c in cols)} WHERE fingerprint = ?",
+        [meta[c] for c in cols] + [posting.fingerprint],
     )
 
 

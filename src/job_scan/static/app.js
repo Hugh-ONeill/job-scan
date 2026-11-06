@@ -116,6 +116,15 @@ function renderPosting(p) {
   if (p.interview_style) metaParts.push(`🤝 ${p.interview_style}`);
   metaParts.push(`seen ${formatDate(p.first_seen)}`);
   $(".posting-meta", root).textContent = metaParts.join(" · ");
+  // A role already applied to under another job id: a repost, a second req,
+  // or a reused generic title for a different team. Tagged, never hidden.
+  if (p.applied_before) {
+    const rep = document.createElement("span");
+    rep.className = "repeat-tag";
+    rep.textContent = `↺ ${p.applied_before}`;
+    rep.title = "You applied to a posting with this company and title before. It may be a repost, or a different team using the same title.";
+    $(".posting-meta", root).append(" · ", rep);
+  }
 
   const tag = $(".status-tag", root);
   tag.textContent = p.status || "pending";

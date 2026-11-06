@@ -10,7 +10,8 @@ from flask import Flask, abort, jsonify, render_template, request
 from .config import DATA_DIR
 from .store import (
     DB_PATH, POST_APPLIED_STATUSES, SCHEMA, STATUSES, add_followup,
-    dedupe_key, quiet_days, _apply_migrations as apply_migrations,
+    applied_before, dedupe_key, prior_applications, quiet_days,
+    _apply_migrations as apply_migrations,
     set_status as store_set_status,
 )
 
@@ -177,6 +178,8 @@ def create_app() -> Flask:
                     [min_score],
                 ).fetchall()
 
+            prior = prior_applications(con) if has_status else {}
+
         out = [_row_to_dict(r) for r in rows]
         # Backfill defaults for rows from a pre-migration DB.
         for d in out:
@@ -184,6 +187,10 @@ def create_app() -> Flask:
             d.setdefault("description", "")
             d.setdefault("strengths", [])
             d.setdefault("concerns", [])
+            # Only an open posting needs the warning; an applied row IS the
+            # earlier application.
+            d["applied_before"] = (applied_before(prior, d["fingerprint"], d.get("company"), d.get("title"))
+                                   if d["status"] in ("pending", "visited") else "")
         # Collapse the same role re-listed under multiple board IDs. Rows are
         # already ordered best-first (score, then freshness), so the first
         # occurrence per (company, title) is the representative we keep.

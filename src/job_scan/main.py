@@ -28,9 +28,9 @@ from .scrapers import (
     fetch_ashby, fetch_greenhouse, fetch_lever, fetch_smartrecruiters, fetch_workday,
 )
 from .store import (
-    connect, count_unscored, filter_new, followups_due, known_by_job_key,
-    mark_liveness, mark_notified, record_dismissed, record_scored,
-    record_unscored, touch_seen,
+    applied_before, connect, count_unscored, filter_new, followups_due,
+    known_by_job_key, mark_liveness, mark_notified, prior_applications,
+    record_dismissed, record_scored, record_unscored, touch_seen,
 )
 
 WEB_HOST = "127.0.0.1"
@@ -169,6 +169,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         scored: list[Scored] = []
         failed = 0
         to_score = [] if defer else new_postings
+        prior = prior_applications(con)
         for i, p in enumerate(to_score, 1):
             if _auto_dismiss(con, p):
                 continue
@@ -180,7 +181,8 @@ def cmd_run(args: argparse.Namespace) -> int:
                 log.warning("scoring failed for %s/%s: %s", p.company, p.title, e)
                 failed += 1
                 continue
-            scored.append(Scored(posting=p, match=m))
+            scored.append(Scored(posting=p, match=m, applied_before=applied_before(
+                prior, p.fingerprint, p.company, p.title)))
             _record(con, p, m)
 
         # Open applications gone quiet — surfaced in the same report/notify
@@ -357,6 +359,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
         resume = load_resume_text(settings.resume_path)
         no_whiteboard = load_no_whiteboard()
         hits: list[Scored] = []
+        prior = prior_applications(con)
         for i, p in enumerate(new, 1):
             if _auto_dismiss(con, p):
                 con.commit()
@@ -376,7 +379,8 @@ def cmd_watch(args: argparse.Namespace) -> int:
             con.commit()
             print(f"{m.score:3d}  {p.company} | {p.title}")
             if m.score >= w.notify_min_score:
-                hits.append(Scored(posting=p, match=m))
+                hits.append(Scored(posting=p, match=m, applied_before=applied_before(
+                    prior, p.fingerprint, p.company, p.title)))
         mark_notified(con, [s.posting.fingerprint for s in hits])
 
     if hits and not args.no_notify:

@@ -396,3 +396,10 @@ details.description .description-body a { color: var(--accent); }
 .btn.tiny { font-size: 11px; padding: 2px 8px; }
 
 input[type="checkbox"] { accent-color: var(--accent); }
+
+/* A role already applied to under another job id (store.applied_before). */
+.repeat-tag {
+  color: var(--warn);
+  font-weight: 600;
+  cursor: help;
+}

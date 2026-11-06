@@ -16,6 +16,9 @@ from .store import dedupe_key
 class Scored:
     posting: Posting
     match: Match
+    # "applied 2026-05-28 (rejected)" when this repeats a role already applied
+    # to under another job id (store.applied_before), else "".
+    applied_before: str = ""
 
 
 def _rank(s: "Scored") -> tuple:
@@ -154,7 +157,9 @@ def _entry(s: Scored, compact: bool = False) -> list[str]:
     p, m = s.posting, s.match
     head = f"### [{p.company}] {p.title} — **{m.score}**"
     style = f" · 🤝 {m.interview_style}" if getattr(m, "interview_style", "") else ""
-    meta = f"*{p.location or '(location unspecified)'}*{_age_str(m.freshness_days)}{style} · [posting]({p.url})"
+    repeat = f" · **↺ {s.applied_before}**" if s.applied_before else ""
+    meta = (f"*{p.location or '(location unspecified)'}*{_age_str(m.freshness_days)}{style}"
+            f"{repeat} · [posting]({p.url})")
     body = [head, "", meta, "", f"> {m.rationale}" if m.rationale else ""]
     if compact:
         return [l for l in body if l != ""]
@@ -229,6 +234,11 @@ def notify_failure(failed: int, attempted: int) -> None:
     )
 
 
+def _repeat_mark(s: Scored) -> str:
+    """Notification suffix for a role already applied to."""
+    return f" (↺ {s.applied_before})" if s.applied_before else ""
+
+
 def notify(
     scored: list[Scored], settings: Settings, report_path: str,
     followups: tuple[list, list] | None = None,
@@ -248,7 +258,7 @@ def notify(
     top = sorted(above, key=_rank)[:3]
     lines = [f"<b>{len(above)} new match(es)</b> — report: {report_path}", ""]
     for s in top:
-        lines.append(f"<b>{s.match.score}</b> · {s.posting.company} — {s.posting.title}")
+        lines.append(f"<b>{s.match.score}</b> · {s.posting.company} — {s.posting.title}{_repeat_mark(s)}")
     body = "\n".join(lines) + fu
     subprocess.run(
         [
@@ -269,7 +279,7 @@ def notify_watch(hits: list[Scored], dashboard_url: str) -> None:
     if not shutil.which("notify-send") or not hits:
         return
     top = sorted(hits, key=_rank)[:4]
-    lines = [f"<b>{s.match.score}</b> · {s.posting.company} — {s.posting.title}" for s in top]
+    lines = [f"<b>{s.match.score}</b> · {s.posting.company} — {s.posting.title}{_repeat_mark(s)}" for s in top]
     if len(hits) > len(top):
         lines.append(f"…and {len(hits) - len(top)} more")
     lines += ["", dashboard_url]

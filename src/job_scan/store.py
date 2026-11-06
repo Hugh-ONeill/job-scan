@@ -5,6 +5,7 @@ import hashlib
 import logging
 import re
 import sqlite3
+import unicodedata
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -30,6 +31,67 @@ def dedupe_key(company: str | None, title: str | None) -> str:
     c = " ".join((company or "").split()).casefold()
     t = " ".join((title or "").split()).casefold()
     return f"{c}\x1f{t}"
+
+
+# ============================================================
+# ROLES ALREADY APPLIED TO
+# ============================================================
+#
+# A role comes back under a new job id: a repost, a second req for the same
+# opening, or the same job found through another source. job_key cannot see
+# it (the id changed) and dedupe_key needs the exact title. Measured
+# 2026-11-06: 128 open postings scoring >=70 repeated a role already applied
+# to (Ramp's frontend role three times since May). Big employers also reuse a
+# generic title for different teams, so this tags a posting, never hides it.
+#
+# The key is the normalized company plus the SORTED SET of title words
+# (career-ops detect-reposts.mjs titleIdentityKey): word order, punctuation
+# and accents stop mattering, while "Engineer - Munich" and "Engineer -
+# Berlin" stay apart. No fuzzy matching.
+
+_COMPANY_NOISE = re.compile(r"^job listings at (?:the )?|\b(?:inc|llc|corp|corporation|co|ltd)\b\.?")
+
+
+def role_key(company: str | None, title: str | None) -> str:
+    """Company + title identity that survives a new job id."""
+    c = re.sub(r"[^a-z0-9]", "", _COMPANY_NOISE.sub("", (company or "").casefold()))
+    t = unicodedata.normalize("NFKD", title or "").encode("ascii", "ignore").decode().casefold()
+    words = " ".join(sorted(set(re.findall(r"[a-z0-9]+", t))))
+    return f"{c}\x1f{words}"
+
+
+def prior_applications(con: sqlite3.Connection) -> dict[str, tuple[str, str, str]]:
+    """role_key -> (date, status, fingerprint) of the EARLIEST application to
+    that role. The date is applied_at, else first_seen for rows marked applied
+    before applied_at existed."""
+    out: dict[str, tuple[str, str, str]] = {}
+    marks = ",".join("?" * len(POST_APPLIED_STATUSES))
+    rows = con.execute(
+        f"SELECT fingerprint, company, title, status, "
+        f"COALESCE(NULLIF(applied_at, ''), first_seen, '') AS d "
+        f"FROM postings WHERE status IN ({marks})",
+        POST_APPLIED_STATUSES,
+    ).fetchall()
+    for fp, company, title, status, d in rows:
+        k = role_key(company, title)
+        cur = out.get(k)
+        if cur is None or (d or "9") < (cur[0] or "9"):
+            out[k] = (d or "", status, fp)
+    return out
+
+
+def applied_before(
+    prior: dict[str, tuple[str, str, str]], fingerprint: str,
+    company: str | None, title: str | None,
+) -> str:
+    """"applied 2026-05-28" (plus the outcome when it is past applied) if this
+    posting repeats a role applied to under another fingerprint, else ""."""
+    hit = prior.get(role_key(company, title))
+    if hit is None or hit[2] == fingerprint:
+        return ""
+    d, status, _ = hit
+    label = f"applied {d[:10]}" if d else "applied before"
+    return label if status == "applied" else f"{label} ({status.replace('_', ' ')})"
 
 
 # --- job identity across sources -----------------------------------------

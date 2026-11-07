@@ -225,7 +225,9 @@ def create_app() -> Flask:
             done = applied_today(con)
         out = []
         for r in rows:
-            d = {**_row_to_dict(r), "window_days": r["window_days"], "applied_before": ""}
+            n = r["company_applications"]
+            d = {**_row_to_dict(r), "window_days": r["window_days"],
+                 "applied_before": f"{n} sent to this company" if n else ""}
             d.setdefault("status", "pending")
             out.append(d)
         return jsonify({"picks": out, "applied_today": done})

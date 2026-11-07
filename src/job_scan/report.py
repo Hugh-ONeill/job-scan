@@ -284,7 +284,9 @@ def notify_picks(picks: list[dict], done_today: int, dashboard_url: str) -> None
     if not picks:
         body = f"Nothing open above the bar right now. Applied today: {done_today}."
     else:
-        lines = [f"<b>{p['score']}</b> · {p['company']} — {p['title']}" for p in picks]
+        lines = [f"<b>{p['score']}</b> · {p['company']} — {p['title']}"
+                 + (f" ({p['company_applications']} sent)" if p["company_applications"] else "")
+                 for p in picks]
         lines += ["", f"Applied today: {done_today}", dashboard_url]
         body = "\n".join(lines)
     subprocess.run(

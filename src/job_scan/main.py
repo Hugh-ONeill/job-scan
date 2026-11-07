@@ -13,8 +13,8 @@ from dataclasses import replace
 
 from .aggregators import fetch_aggregators
 from .config import (
-    CONFIG_DIR, Company, load_aggregators, load_companies, load_filters,
-    load_gap_vocabulary, load_no_whiteboard_companies, load_settings,
+    CONFIG_DIR, Company, load_aggregators, load_auto_companies, load_companies,
+    load_filters, load_gap_vocabulary, load_no_whiteboard_companies, load_settings,
 )
 from .filter import passes
 from .interview_style import load_no_whiteboard
@@ -64,6 +64,19 @@ def _ollama_up(host: str) -> bool:
         return False
 
 
+def _unique_boards(companies: list[Company]) -> list[Company]:
+    """First entry per (ats, slug), so the hand-curated list's name and
+    priority win over the generated lists that may repeat a board."""
+    seen: set[tuple[str, str]] = set()
+    out: list[Company] = []
+    for c in companies:
+        key = (c.ats, c.slug.lower())
+        if key not in seen:
+            seen.add(key)
+            out.append(c)
+    return out
+
+
 def cmd_probe(args: argparse.Namespace) -> int:
     """Test an ATS+slug combo without running a full scan."""
     handlers = {
@@ -94,6 +107,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         nw = load_no_whiteboard_companies()
         log.info("including %d no-whiteboard companies (weekly sweep)", len(nw))
         companies += nw
+    auto = load_auto_companies()
+    if auto:
+        log.info("including %d aggregator-promoted boards", len(auto))
+    companies = _unique_boards(companies + auto)
     log.info("loaded %d companies (%d priority)",
              len(companies),
              sum(1 for c in companies if c.priority))
@@ -707,13 +724,28 @@ def cmd_resolve_nw(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_resolve_agg(args: argparse.Namespace) -> int:
+    """Promote boards that aggregators keep surfacing into a generated sweep list."""
+    from .resolve_aggregated import resolve_aggregated, write_yaml
+    with connect() as con:
+        companies = resolve_aggregated(con, load_filters())
+    if not companies:
+        log.error("resolved 0 boards (likely a network failure); keeping cached list")
+        return 1
+    path = write_yaml(companies)
+    from collections import Counter
+    print(f"\nPromoted {len(companies)} aggregator-surfaced boards -> {path}")
+    print(f"by ATS: {dict(Counter(c['ats'] for c in companies))}")
+    return 0
+
+
 def cmd_prune(args: argparse.Namespace) -> int:
     """Re-fetch the boards and flag postings that have vanished (dead links).
 
     No scoring/LLM — just refreshes liveness. The daily/weekly run does this
     inline; use `prune` for an on-demand check between runs.
     """
-    companies = load_companies() + load_no_whiteboard_companies()
+    companies = _unique_boards(load_companies() + load_no_whiteboard_companies() + load_auto_companies())
     log.info("fetching %d company boards for liveness check ...", len(companies))
     postings = fetch_all(companies)
     log.info("fetched %d postings", len(postings))
@@ -778,6 +810,10 @@ def main(argv: list[str] | None = None) -> int:
     resolve_nw = sub.add_parser("resolve-nw", help="resolve hiring-without-whiteboards list to scannable ATS companies")
     resolve_nw.add_argument("--no-validate", action="store_true", help="skip the live-board validation pass")
     resolve_nw.set_defaults(func=cmd_resolve_nw)
+
+    resolve_agg = sub.add_parser("resolve-agg",
+                                 help="promote Greenhouse/Lever/Ashby boards aggregators surface into a sweep list")
+    resolve_agg.set_defaults(func=cmd_resolve_agg)
 
     prune = sub.add_parser("prune", help="re-fetch boards and hide postings with dead links (no scoring)")
     prune.set_defaults(func=cmd_prune)

@@ -12,4 +12,5 @@ for _ in $(seq 1 60); do
 done
 # Best-effort refresh; if it fails (network/parse), fall back to the cached list.
 .venv/bin/python -m job_scan resolve-nw || echo "resolve-nw failed; using cached company list"
+.venv/bin/python -m job_scan resolve-agg || echo "resolve-agg failed; using cached board list"
 exec .venv/bin/python -m job_scan run --with-no-whiteboard "$@"

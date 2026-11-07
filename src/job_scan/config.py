@@ -281,6 +281,16 @@ def load_no_whiteboard_companies() -> list[Company]:
     return [_company(e, priority=False) for e in raw.get("companies", []) or []]
 
 
+def load_auto_companies() -> list[Company]:
+    """Boards promoted from aggregator rows by `resolve-agg` (generated weekly).
+    Empty if it hasn't been run yet."""
+    path = CONFIG_DIR / "companies.auto.yaml"
+    if not path.exists():
+        return []
+    raw = yaml.safe_load(path.read_text()) or {}
+    return [_company(e, priority=False) for e in raw.get("companies", []) or []]
+
+
 def load_gap_vocabulary() -> dict[str, "re.Pattern[str]"]:
     """Compile config/gap_terms.yaml into {term: compiled alternation}.
 

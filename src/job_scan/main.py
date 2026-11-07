@@ -741,19 +741,20 @@ def cmd_resolve_agg(args: argparse.Namespace) -> int:
 
 def cmd_picks(args: argparse.Namespace) -> int:
     """Today's picks: the best open postings not yet applied to."""
-    from .picks import applied_today, daily_picks
+    from .picks import applied_today, daily_picks, hidden_reason
     from .report import notify_picks
     settings = load_settings()
     with connect() as con:
-        picks = daily_picks(con, settings.min_score, settings.max_age_days, n=args.n)
+        picks = daily_picks(con, settings.min_score, n=args.n)
         done = applied_today(con)
+    reason = hidden_reason(done)
     for i, p in enumerate(picks, 1):
         sent = f" ({p['company_applications']} sent)" if p["company_applications"] else ""
         print(f"{i}. [{p['score']}] {p['company']}{sent} | {p['title']} | {p['location'] or '-'}\n   {p['url']}")
     if not picks:
         print("No open postings above min_score.")
-    print(f"Applied today: {done}")
-    if args.notify:
+    print(f"Applied today: {done}" + (f" (not shown now: {reason})" if reason else ""))
+    if args.notify and not reason:
         notify_picks(picks, done, WEB_URL + "#picks")
     return 0
 

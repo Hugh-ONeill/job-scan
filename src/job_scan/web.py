@@ -216,21 +216,22 @@ def create_app() -> Flask:
     @app.get("/api/picks")
     def picks():
         from .config import load_settings
-        from .picks import applied_today, daily_picks
+        from .picks import applied_today, daily_picks, hidden_reason
         if not DB_PATH.exists():
-            return jsonify({"picks": [], "applied_today": 0})
-        s = load_settings()
+            return jsonify({"picks": [], "applied_today": 0, "show": False})
         with _connect() as con:
-            rows = daily_picks(con, s.min_score, s.max_age_days)
             done = applied_today(con)
+            if hidden_reason(done):
+                return jsonify({"picks": [], "applied_today": done, "show": False})
+            rows = daily_picks(con, load_settings().min_score)
         out = []
         for r in rows:
             n = r["company_applications"]
-            d = {**_row_to_dict(r), "window_days": r["window_days"],
+            d = {**_row_to_dict(r),
                  "applied_before": f"{n} sent to this company" if n else ""}
             d.setdefault("status", "pending")
             out.append(d)
-        return jsonify({"picks": out, "applied_today": done})
+        return jsonify({"picks": out, "applied_today": done, "show": True})
 
     @app.post("/api/postings/<fingerprint>/status")
     def set_status(fingerprint: str):

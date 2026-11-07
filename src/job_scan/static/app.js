@@ -401,18 +401,17 @@ $("#pipeline-resolved-toggle").addEventListener("click", () => {
 async function loadPicks() {
   const r = await fetch("/api/picks");
   if (!r.ok) return;
-  const { picks, applied_today } = await r.json();
+  const { picks, applied_today, show } = await r.json();
   const section = $("#picks");
   const rows = $("#picks-rows");
   rows.innerHTML = "";
-  section.hidden = false;
+  // Server decides: 14:00-20:00 only, and gone once three are sent today.
+  section.hidden = !show;
+  if (!show) return;
   $("#picks-title").textContent = picks.length ? `Today's ${picks.length === 3 ? "three" : picks.length}` : "Today's picks";
-  const widest = Math.max(0, ...picks.map(p => p.window_days));
-  const parts = [`<span class="muted">applied today: ${applied_today}</span>`];
-  if (widest > 2) parts.push(`<span class="muted">· reaching back ${widest} days</span>`);
-  $("#picks-meta").innerHTML = parts.join(" ");
+  $("#picks-meta").innerHTML = `<span class="muted">applied today: ${applied_today} of 3</span>`;
   if (!picks.length) {
-    rows.innerHTML = '<p class="empty">Nothing open above the bar right now.</p>';
+    rows.innerHTML = '<p class="empty">Nothing from the last three days above the bar.</p>';
     return;
   }
   picks.forEach(p => rows.appendChild(renderPosting(p)));

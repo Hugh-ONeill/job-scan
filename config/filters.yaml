@@ -128,3 +128,34 @@ blocked_domains:
   # existed ONLY via adzuna and whatjobs, so it would not have been surfaced.
   - whatjobs.com
   - adzuna.com
+
+# Companies dropped before scoring, matched as case-insensitive substrings of
+# the posting's company name. These are not employers: they score 100 because
+# their text is a skills checklist with no team, product or requirement to
+# penalize, and they never convert. Measured 2026-11-02 over postings scored
+# 90+ in the previous 75 days.
+blocked_companies:
+  # Talent marketplaces: you submit a profile and they shop it. Fonzi alone was
+  # 73 postings at 100 from 10 descriptions, reposted almost daily on LinkedIn
+  # since 2026-09-25, 0 applied.
+  - fonzi
+  - yara ai
+  - wrkmark
+  - mobina
+  - lemon.io
+  - underdog
+  - huzzle            # sales staffing marketplace, not even engineering
+  - hiredbuddy        # "entry-level, remote, apply today" lead-gen front
+  # AI data-labeling and model-evaluation gig work: part-time, paid per task.
+  - opentrain
+  - turing            # current postings are all "help evaluate AI systems"
+  - 24-mag
+  - yo ai labs
+  - invisible technologies
+  - dataannotation
+  - codeforai
+  - remotejobsone     # micro1 "human data platforms" text, republished
+  - pro integrate     # same micro1 text under another name
+  # Reposters with no conversion. Raydar: 93 postings, 66 at 90+, 0 applied,
+  # every one "recruiting on behalf of our client" via freehire.
+  - raydar

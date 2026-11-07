@@ -1,6 +1,7 @@
 """Cheap pre-LLM filters: title keywords + location."""
 from __future__ import annotations
 
+import functools
 import re
 
 from .config import Filters
@@ -89,6 +90,11 @@ def _remote_ok(original_loc: str) -> bool:
     return True  # bare "Remote" with no geography — accept
 
 
+@functools.lru_cache(maxsize=4)
+def _blocked_company_re(names: tuple[str, ...]) -> re.Pattern[str]:
+    return re.compile(r"\b(?:" + "|".join(re.escape(n) for n in names) + r")\b", re.IGNORECASE)
+
+
 def passes(posting: Posting, f: Filters) -> bool:
     title = posting.title.lower()
     loc = posting.location.lower()
@@ -98,6 +104,12 @@ def passes(posting: Posting, f: Filters) -> bool:
         host = (posting.url or "").lower()
         if any(d in host for d in f.blocked_domains):
             return False
+
+    # Blocked companies likewise: marketplaces and gig mills write a skills
+    # checklist with nothing to penalize, so they score 100 and never convert.
+    # Whole-word match: a bare substring let "turing" hit Re:Build Manufacturing.
+    if f.blocked_companies and _blocked_company_re(tuple(f.blocked_companies)).search(posting.company or ""):
+        return False
 
     if f.title_include and not _matches_any(title, f.title_include):
         return False

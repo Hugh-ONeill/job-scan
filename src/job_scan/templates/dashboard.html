@@ -6,6 +6,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="Daily scan of job postings scored against a resume, with an application pipeline.">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<!-- The viewing machine's theme (~/.config/themes, theme-stylus.service). The
+     browser fetches it, so over the laptop tunnel it is the laptop's theme.
+     Absent server: the built-in Catppuccin values above stand. -->
+<link rel="stylesheet" href="http://127.0.0.1:8790/scan-dashboards.css">
 </head>
 <body>
 <header>

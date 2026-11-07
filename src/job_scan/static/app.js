@@ -396,6 +396,28 @@ $("#pipeline-resolved-toggle").addEventListener("click", () => {
   loadPipeline();
 });
 
+// ---- Today's picks: the floor for the day, refilled as they're applied to ----
+
+async function loadPicks() {
+  const r = await fetch("/api/picks");
+  if (!r.ok) return;
+  const { picks, applied_today } = await r.json();
+  const section = $("#picks");
+  const rows = $("#picks-rows");
+  rows.innerHTML = "";
+  section.hidden = false;
+  $("#picks-title").textContent = picks.length ? `Today's ${picks.length === 3 ? "three" : picks.length}` : "Today's picks";
+  const widest = Math.max(0, ...picks.map(p => p.window_days));
+  const parts = [`<span class="muted">applied today: ${applied_today}</span>`];
+  if (widest > 2) parts.push(`<span class="muted">· reaching back ${widest} days</span>`);
+  $("#picks-meta").innerHTML = parts.join(" ");
+  if (!picks.length) {
+    rows.innerHTML = '<p class="empty">Nothing open above the bar right now.</p>';
+    return;
+  }
+  picks.forEach(p => rows.appendChild(renderPosting(p)));
+}
+
 async function loadStats() {
   const r = await fetch("/api/stats");
   const s = await r.json();
@@ -434,6 +456,7 @@ async function load() {
   renderGroups();
   loadStats();
   loadPipeline();
+  loadPicks();
 }
 
 // Comparator for the active sort mode. "score" leads with score and breaks

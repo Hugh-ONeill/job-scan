@@ -85,7 +85,7 @@ def _existing_columns() -> set[str]:
         return set()
 
 
-def _row_to_dict(r: sqlite3.Row) -> dict:
+def _row_to_dict(r: sqlite3.Row | dict) -> dict:
     d = dict(r)
     if "strengths" in d.keys():
         d["strengths"] = json.loads(d["strengths"]) if d.get("strengths") else []
@@ -212,6 +212,23 @@ def create_app() -> Flask:
                 or q in (d["rationale"] or "").lower()
             ]
         return jsonify(out)
+
+    @app.get("/api/picks")
+    def picks():
+        from .config import load_settings
+        from .picks import applied_today, daily_picks
+        if not DB_PATH.exists():
+            return jsonify({"picks": [], "applied_today": 0})
+        s = load_settings()
+        with _connect() as con:
+            rows = daily_picks(con, s.min_score, s.max_age_days)
+            done = applied_today(con)
+        out = []
+        for r in rows:
+            d = {**_row_to_dict(r), "window_days": r["window_days"], "applied_before": ""}
+            d.setdefault("status", "pending")
+            out.append(d)
+        return jsonify({"picks": out, "applied_today": done})
 
     @app.post("/api/postings/<fingerprint>/status")
     def set_status(fingerprint: str):

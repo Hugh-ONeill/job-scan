@@ -277,6 +277,23 @@ def notify(
     )
 
 
+def notify_picks(picks: list[dict], done_today: int, dashboard_url: str) -> None:
+    """Midday nudge: today's picks, and how many applications are in today."""
+    if not shutil.which("notify-send"):
+        return
+    if not picks:
+        body = f"Nothing open above the bar right now. Applied today: {done_today}."
+    else:
+        lines = [f"<b>{p['score']}</b> · {p['company']} — {p['title']}" for p in picks]
+        lines += ["", f"Applied today: {done_today}", dashboard_url]
+        body = "\n".join(lines)
+    subprocess.run(
+        ["notify-send", "-u", "normal", "-a", "job-scan",
+         f"job-scan: today's {len(picks)}" if picks else "job-scan: today's picks", body],
+        check=False,
+    )
+
+
 def notify_watch(hits: list[Scored], dashboard_url: str) -> None:
     """Intraday watch: strong new postings only, so this interrupts rarely."""
     if not shutil.which("notify-send") or not hits:

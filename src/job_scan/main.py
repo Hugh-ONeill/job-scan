@@ -739,6 +739,24 @@ def cmd_resolve_agg(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_picks(args: argparse.Namespace) -> int:
+    """Today's picks: the best open postings not yet applied to."""
+    from .picks import applied_today, daily_picks
+    from .report import notify_picks
+    settings = load_settings()
+    with connect() as con:
+        picks = daily_picks(con, settings.min_score, settings.max_age_days, n=args.n)
+        done = applied_today(con)
+    for i, p in enumerate(picks, 1):
+        print(f"{i}. [{p['score']}] {p['company']} | {p['title']} | {p['location'] or '-'}\n   {p['url']}")
+    if not picks:
+        print("No open postings above min_score.")
+    print(f"Applied today: {done}")
+    if args.notify:
+        notify_picks(picks, done, WEB_URL + "#picks")
+    return 0
+
+
 def cmd_prune(args: argparse.Namespace) -> int:
     """Re-fetch the boards and flag postings that have vanished (dead links).
 
@@ -814,6 +832,11 @@ def main(argv: list[str] | None = None) -> int:
     resolve_agg = sub.add_parser("resolve-agg",
                                  help="promote Greenhouse/Lever/Ashby boards aggregators surface into a sweep list")
     resolve_agg.set_defaults(func=cmd_resolve_agg)
+
+    picks = sub.add_parser("picks", help="today's best open postings not yet applied to (no LLM)")
+    picks.add_argument("-n", type=int, default=3, help="how many (default 3)")
+    picks.add_argument("--notify", action="store_true", help="also send them as a notification")
+    picks.set_defaults(func=cmd_picks)
 
     prune = sub.add_parser("prune", help="re-fetch boards and hide postings with dead links (no scoring)")
     prune.set_defaults(func=cmd_prune)

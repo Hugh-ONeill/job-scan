@@ -311,9 +311,6 @@ companies:
 - name: jbs-dev
   ats: ashby
   slug: jbs-dev
-- name: jobgether
-  ats: lever
-  slug: jobgether
 - name: Judi Health
   ats: greenhouse
   slug: judihealth

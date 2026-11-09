@@ -12,7 +12,9 @@ Type=oneshot
 WorkingDirectory=%h/Developer/job-scan
 # Hold a sleep inhibitor for the whole run: hypridle suspends after 30 min idle, which
 # would otherwise land mid-run and time out every in-flight request.
-ExecStart=systemd-inhibit --what=sleep --mode=block --why="job-scan daily run" %h/Developer/job-scan/run.sh
+# flock: wait for the Monday weekly run instead of crashing on "database is locked";
+# the weekly holds one write transaction for its whole scoring pass.
+ExecStart=systemd-inhibit --what=sleep --mode=block --why="job-scan daily run" flock %h/Developer/job-scan/data/.scan.lock %h/Developer/job-scan/run.sh
 # Make notify-send able to reach the user session
 Environment=DISPLAY=:0
 Environment=XDG_RUNTIME_DIR=/run/user/%U

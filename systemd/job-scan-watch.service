@@ -9,7 +9,9 @@ WorkingDirectory=%h/Developer/job-scan
 # Up to watch.max_score LLM calls (~30 x ~37 s while the red-recomp chain shares
 # the GPU), so hold the inhibitor: hypridle's 30-min idle suspend would otherwise
 # land mid-scoring.
-ExecStart=systemd-inhibit --what=sleep --mode=block --why="job-scan watch" %h/Developer/job-scan/.venv/bin/python -m job_scan watch
+# Skip (exit 0) while a daily or weekly run holds the lock; waiting would eat the
+# 45 min timeout, and the next watch is two hours out anyway.
+ExecStart=systemd-inhibit --what=sleep --mode=block --why="job-scan watch" flock --nonblock --conflict-exit-code 0 %h/Developer/job-scan/data/.scan.lock %h/Developer/job-scan/.venv/bin/python -m job_scan watch
 Environment=DISPLAY=:0
 Environment=XDG_RUNTIME_DIR=/run/user/%U
 TimeoutStartSec=45min

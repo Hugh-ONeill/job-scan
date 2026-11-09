@@ -26,9 +26,6 @@ companies:
 - name: Badoo
   ats: ashby
   slug: bumbleinc
-- name: Bloom Works
-  ats: greenhouse
-  slug: bloomworks
 - name: Bugcrowd
   ats: greenhouse
   slug: bugcrowd
@@ -38,9 +35,6 @@ companies:
 - name: Bustle
   ats: lever
   slug: BDG
-- name: Calendly
-  ats: greenhouse
-  slug: calendly
 - name: Civis Analytics
   ats: greenhouse
   slug: civisanalytics
@@ -115,9 +109,6 @@ companies:
 - name: Knock.com
   ats: greenhouse
   slug: knock
-- name: Kong
-  ats: ashby
-  slug: kong
 - name: LaunchDarkly
   ats: greenhouse
   slug: launchdarkly
@@ -150,9 +141,6 @@ companies:
   slug: myhrhome
   host: myhrhome.wd1.myworkdayjobs.com
   board: OneMainCareers
-- name: Ori
-  ats: ashby
-  slug: radiant
 - name: Philo
   ats: ashby
   slug: philo
@@ -221,7 +209,7 @@ companies:
   slug: textio
 - name: Tooploox
   ats: ashby
-  slug: tooploox
+  slug: Tooploox
 - name: Top Hat
   ats: ashby
   slug: top-hat

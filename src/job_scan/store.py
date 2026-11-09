@@ -424,9 +424,13 @@ def _apply_migrations(con: sqlite3.Connection) -> None:
 @contextmanager
 def connect(path: Path = DB_PATH):
     path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(path)
+    con = sqlite3.connect(path, timeout=30.0)
     con.row_factory = sqlite3.Row
     try:
+        # WAL lets the dashboard and the picks read while a scan holds its long
+        # write transaction; the default rollback journal locks readers out for
+        # the whole run. Stored in the file, so this is a no-op after the first.
+        con.execute("PRAGMA journal_mode=WAL")
         con.executescript(SCHEMA)
         _apply_migrations(con)
         yield con

@@ -163,16 +163,25 @@ function renderPosting(p) {
 
   const head = $(".posting-head", root);
   const detail = $(".detail", root);
+  head.setAttribute("aria-expanded", "false");
   head.addEventListener("click", () => {
     const willOpen = detail.hidden;
     detail.hidden = !willOpen;
     root.classList.toggle("expanded", willOpen);
+    head.setAttribute("aria-expanded", willOpen);
     if (willOpen) openFps.add(p.fingerprint); else openFps.delete(p.fingerprint);
   });
   if (openFps.has(p.fingerprint)) {
     detail.hidden = false;
     root.classList.add("expanded");
+    head.setAttribute("aria-expanded", "true");
   }
+  // The full description stays open across the periodic re-render.
+  const desc = $(".description", root);
+  desc.open = openDescFps.has(p.fingerprint);
+  desc.addEventListener("toggle", () => {
+    if (desc.open) openDescFps.add(p.fingerprint); else openDescFps.delete(p.fingerprint);
+  });
   return frag;
 }
 
@@ -404,6 +413,7 @@ async function loadPicks() {
   const { picks, applied_today, show } = await r.json();
   const section = $("#picks");
   const rows = $("#picks-rows");
+  const focused = focusedControl(rows);
   rows.innerHTML = "";
   // Server decides: 14:00-20:00 only, and gone once three are sent today.
   section.hidden = !show;
@@ -415,6 +425,7 @@ async function loadPicks() {
     return;
   }
   picks.forEach(p => rows.appendChild(renderPosting(p)));
+  restoreFocus(rows, focused);
 }
 
 async function loadStats() {
@@ -438,7 +449,21 @@ async function loadStats() {
 
 let postings = [];
 let openFps = new Set();
+let openDescFps = new Set();
 let expandedGroups = new Set();
+
+// Re-rendering rebuilds every row, which would drop keyboard focus onto
+// <body>. Note which control of which posting had it, and hand it back.
+const FOCUSABLE = [".posting-head", ".description > summary", ".apply", ".mark-applied", ".dismiss", ".reset"];
+function focusedControl(container) {
+  const el = document.activeElement;
+  const posting = container.contains(el) ? el.closest(".posting") : null;
+  const sel = posting && FOCUSABLE.find(s => el.matches(s));
+  return sel ? { fp: posting.dataset.fp, sel } : null;
+}
+function restoreFocus(container, f) {
+  if (f) $(`.posting[data-fp="${CSS.escape(f.fp)}"] ${f.sel}`, container)?.focus({ preventScroll: true });
+}
 
 async function load() {
   const params = new URLSearchParams();
@@ -489,6 +514,7 @@ function groupByCompany(ps) {
 }
 
 function renderGroups() {
+  const focused = focusedControl(groupsEl);
   groupsEl.innerHTML = "";
   if (postings.length === 0) {
     groupsEl.innerHTML = '<p class="empty">No postings match the current filters.</p>';
@@ -499,6 +525,7 @@ function renderGroups() {
   for (const { company, items } of groups) {
     groupsEl.appendChild(renderGroup(company, items, topN));
   }
+  restoreFocus(groupsEl, focused);
 }
 
 minScoreEl.addEventListener("change", load);
@@ -512,5 +539,14 @@ function debounce(fn, ms) {
   return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
 }
 
+// The timer rebuilds the pipeline table too, so it waits while a note is
+// being typed or a status picked there, and while the tab is in the background.
+function refreshIfIdle() {
+  if (document.hidden) return;
+  if (document.activeElement?.closest("#pipeline-rows")) return;
+  load();
+}
+
 load();
-setInterval(load, 30000);
+setInterval(refreshIfIdle, 30000);
+document.addEventListener("visibilitychange", refreshIfIdle);

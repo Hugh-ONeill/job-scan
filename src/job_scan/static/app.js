@@ -308,6 +308,7 @@ function pipelineRow(row, threshold, staleAfter) {
     opt.selected = s === row.status;
     sel.appendChild(opt);
   }
+  sel.setAttribute("aria-label", `Status of ${row.title} at ${row.company}`);
   sel.addEventListener("change", () => setStatus(row.fingerprint, sel.value));
   status.appendChild(sel);
   tr.appendChild(status);
@@ -351,6 +352,7 @@ function pipelineRow(row, threshold, staleAfter) {
   input.className = "notes-input";
   input.value = row.notes || "";
   input.placeholder = "notes…";
+  input.setAttribute("aria-label", `Notes on ${row.title} at ${row.company}`);
   input.addEventListener("change", () => saveNotes(row.fingerprint, input.value));
   notes.appendChild(input);
   tr.appendChild(notes);

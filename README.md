@@ -46,7 +46,8 @@ transparent and tunable (no "trust the model's vibe" black box):
 ```
 capability = skill_weight * skill_fit + (1 - skill_weight) * seniority_fit
 base       = capability * (domain_floor + (1 - domain_floor) * domain_fit / 100)
-final      = clamp(base + location_points[tier] + interview_points)
+final      = clamp(base + location_points[tier] + interview_points
+                   + easy_apply_points)
 ```
 
 - **skill_fit / seniority_fit / domain_fit** (0–100) — rated by the model.

@@ -50,7 +50,8 @@ ats_max_age_days:
 #   base  = skill_fit
 #           * (seniority_floor + (1-seniority_floor)*seniority_fit/100)   # gate
 #           * (domain_floor    + (1-domain_floor)   *domain_fit/100)      # gate
-#   final = clamp(base + location_points[tier] + interview_points)
+#   final = clamp(base + location_points[tier] + interview_points
+#                 + easy_apply_points)
 #
 # Posting age is NOT scored — it's a sort dimension only. The report and
 # dashboard already order by date within a score, so scoring freshness too
@@ -74,6 +75,9 @@ scoring:
   breadth_threshold: 16      # ~p95 of postings; no penalty at or below this
   breadth_points: 0.8        # points deducted per named technology above it
   breadth_penalty_max: 8     # hard cap on the deduction
+  # Added when a LinkedIn posting is Easy Apply (tagged in the report and the
+  # dashboard either way). Effort, not fit: small on purpose, 0 turns it off.
+  easy_apply_points: 3
   # Points added per location tier (see location_preference below for tiers).
   location_points:
     1: 8     # fully remote (US / anywhere-incl-US)

@@ -38,7 +38,8 @@ class ScoringConfig:
         base  = skill_fit
                 * (seniority_floor + (1-seniority_floor)*seniority_fit/100)
                 * (domain_floor    + (1-domain_floor)   *domain_fit/100)
-        final = clamp(base + location_points[tier] + interview_points)
+        final = clamp(base + location_points[tier] + interview_points
+                      + easy_apply_points)
 
     Seniority and domain are multiplicative GATES, not averaged terms: a role
     the candidate isn't plausibly hireable into (low seniority_fit, e.g. asking
@@ -56,6 +57,11 @@ class ScoringConfig:
     # real-work exercises instead of algorithmic puzzles (hiring-without-
     # whiteboards list, or take-home/pair keywords in the posting).
     interview_points: int = 10
+    # Nudge for LinkedIn Easy Apply postings. Not a fit signal: it is here
+    # because a one-click application costs minutes, not an hour, so between
+    # two similar matches the cheap one is worth sending first. Kept small so
+    # it breaks near-ties without lifting a weak match over a strong one.
+    easy_apply_points: int = 3
     # Finer-grained location tiers (see location_preference for definitions):
     #   1 remote · 2 explicit relo/visa · 3 commute-NJ · 4 commute-NYC
     #   5 commute-Philly · 6 neutral (US, no relo language) · 7 explicit-no-relo
@@ -192,6 +198,7 @@ def _load_scoring(raw: dict) -> ScoringConfig:
         seniority_floor=float(s.get("seniority_floor", defaults.seniority_floor)),
         domain_floor=float(s.get("domain_floor", defaults.domain_floor)),
         interview_points=int(s.get("interview_points", defaults.interview_points)),
+        easy_apply_points=int(s.get("easy_apply_points", defaults.easy_apply_points)),
         location_points=(
             {int(k): int(v) for k, v in loc.items()} if loc else defaults.location_points
         ),

@@ -226,6 +226,10 @@ MIGRATIONS = [
     ("seniority_label",   "ALTER TABLE postings ADD COLUMN seniority_label TEXT"),
     ("employment_type",   "ALTER TABLE postings ADD COLUMN employment_type TEXT"),
     ("applicants",        "ALTER TABLE postings ADD COLUMN applicants TEXT"),
+    # "Easy Apply" when the application is LinkedIn's own form, NULL otherwise
+    # (external apply, another source, or fetched before this was parsed).
+    # The one listing field that does reach the score: see matcher.combine.
+    ("apply_method",      "ALTER TABLE postings ADD COLUMN apply_method TEXT"),
 ]
 
 POST_MIGRATION_INDEXES = """
@@ -911,7 +915,7 @@ def record_unscored(con: sqlite3.Connection, posting) -> None:
     )
 
 
-SOURCE_META_COLUMNS = ("seniority_label", "employment_type", "applicants")
+SOURCE_META_COLUMNS = ("seniority_label", "employment_type", "applicants", "apply_method")
 
 
 def record_source_meta(con: sqlite3.Connection, posting) -> None:

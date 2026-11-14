@@ -13,6 +13,10 @@ from ..config import Company
 log = logging.getLogger(__name__)
 
 
+# source_meta["apply_method"] value for LinkedIn's one-click applications.
+EASY_APPLY = "Easy Apply"
+
+
 @dataclass
 class Posting:
     company: str
@@ -30,7 +34,8 @@ class Posting:
     flags: list[str] = field(default_factory=list)
     # What the source lists beside the description, keyed by
     # store.SOURCE_META_COLUMNS (LinkedIn: seniority_label, employment_type,
-    # applicants). Display only.
+    # applicants, apply_method). Display only, except apply_method, which
+    # earns scoring.easy_apply_points when it is "Easy Apply".
     source_meta: dict[str, str] = field(default_factory=dict)
 
     @property

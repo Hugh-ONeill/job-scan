@@ -114,7 +114,7 @@ function renderPosting(p) {
   const age = ageLabel(p);
   if (age) metaParts.push(age);
   if (p.interview_style) metaParts.push(`🤝 ${p.interview_style}`);
-  const listing = [p.seniority_label, p.employment_type, p.applicants].filter(Boolean);
+  const listing = [p.apply_method, p.seniority_label, p.employment_type, p.applicants].filter(Boolean);
   if (listing.length) metaParts.push(listing.join(" · "));
   metaParts.push(`seen ${formatDate(p.first_seen)}`);
   $(".posting-meta", root).textContent = metaParts.join(" · ");

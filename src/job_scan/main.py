@@ -23,7 +23,7 @@ from .matcher import combine, freshness_days, score_posting
 from .report import Scored, notify, notify_deferred, notify_failure, notify_watch, write_report
 from .resident import apply_resident
 from .resume import load_resume_text
-from .scrapers.base import Posting, fetch_all
+from .scrapers.base import EASY_APPLY, Posting, fetch_all
 from .scrapers import (
     fetch_ashby, fetch_greenhouse, fetch_lever, fetch_smartrecruiters, fetch_workday,
 )
@@ -467,7 +467,7 @@ def cmd_rescore(args: argparse.Namespace) -> int:
         where = "WHERE score IS NULL " if args.unscored_only else ""
         rows = con.execute(
             "SELECT fingerprint, company, title, url, location, description, "
-            f"posted_at, first_seen FROM postings {where}ORDER BY first_seen DESC"
+            f"posted_at, first_seen, apply_method FROM postings {where}ORDER BY first_seen DESC"
         ).fetchall()
         if args.limit:
             rows = rows[: args.limit]
@@ -480,6 +480,7 @@ def cmd_rescore(args: argparse.Namespace) -> int:
                 company=r["company"], ats=ats, slug=slug, posting_id=posting_id,
                 title=r["title"], location=r["location"] or "", url=r["url"],
                 description=r["description"] or "", posted_at=proxy_posted,
+                source_meta={"apply_method": r["apply_method"]} if r["apply_method"] else {},
             )
             log.info("[%d/%d] %s | %s", i, len(rows), p.company, p.title)
             try:
@@ -522,7 +523,7 @@ def cmd_recompute(args: argparse.Namespace) -> int:
     with connect() as con:
         rows = con.execute(
             "SELECT fingerprint, company, description, concerns, skill_fit, seniority_fit, "
-            "domain_fit, location_tier FROM postings "
+            "domain_fit, location_tier, apply_method FROM postings "
             "WHERE skill_fit IS NOT NULL"
         ).fetchall()
         n_tagged = n_cleaned = 0
@@ -535,6 +536,7 @@ def cmd_recompute(args: argparse.Namespace) -> int:
                 r["skill_fit"], r["seniority_fit"], r["domain_fit"],
                 r["location_tier"] if r["location_tier"] is not None else 6,
                 sc, bonus,
+                easy_apply=r["apply_method"] == EASY_APPLY,
             )
             # Strip employment-gap / short-tenure concern bullets from stored rows.
             try:

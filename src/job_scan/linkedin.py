@@ -24,7 +24,7 @@ import requests
 
 from .config import Aggregators
 from .filter import passes
-from .scrapers.base import Posting, html_to_markdown, normalize_date
+from .scrapers.base import EASY_APPLY, Posting, html_to_markdown, normalize_date
 
 log = logging.getLogger(__name__)
 
@@ -161,11 +161,18 @@ _CRITERIA_KEYS = {"seniority level": "seniority_label", "employment type": "empl
 # first 25 applicants". The EEO boilerplate also says "applicants", so only the
 # captioned element counts.
 _APPLICANTS = re.compile(r'num-applicants__caption[^>]*>\s*([^<]*?applicants?)\s*<', re.I)
+# The apply button's tracking name says where the application happens:
+# "...apply-link-onsite" is Easy Apply (LinkedIn's own form), while
+# "...apply-link-offsite..." sends you to the employer's site. Checked
+# 2026-11-12 against the f_AL (Easy Apply) search filter: 5 of 5 filtered
+# postings carried onsite, 5 of 5 unfiltered external ones carried offsite.
+_EASY_APPLY = re.compile(r'data-tracking-control-name="public_jobs_apply-link-onsite"', re.I)
 
 
 def parse_listing_meta(page: str) -> dict[str, str]:
-    """Seniority level, employment type and applicant caption from a detail
-    page, keyed by store.SOURCE_META_COLUMNS. Missing pieces are left out."""
+    """Seniority level, employment type, applicant caption and apply method
+    from a detail page, keyed by store.SOURCE_META_COLUMNS. Missing pieces are
+    left out."""
     meta: dict[str, str] = {}
     for label, value in _CRITERION.findall(page):
         col = _CRITERIA_KEYS.get(html_mod.unescape(label).strip().casefold())
@@ -175,6 +182,8 @@ def parse_listing_meta(page: str) -> dict[str, str]:
     m = _APPLICANTS.search(page)
     if m:
         meta["applicants"] = " ".join(html_mod.unescape(m.group(1)).split())
+    if _EASY_APPLY.search(page):
+        meta["apply_method"] = EASY_APPLY
     return meta
 
 

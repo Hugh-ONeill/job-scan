@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 import requests
 
 from .config import OllamaConfig, ScoringConfig
-from .scrapers.base import Posting
+from .scrapers.base import EASY_APPLY, Posting
 
 log = logging.getLogger(__name__)
 
@@ -223,11 +223,14 @@ def combine(
     scoring: ScoringConfig,
     interview_bonus: int = 0,
     tech_breadth: int = 0,
+    easy_apply: bool = False,
 ) -> int:
     """Assemble the final 0-100 score from the LLM sub-scores + adjustments.
 
     The score reflects *fit only* (skill / seniority / domain / location /
-    interview style). Posting age is deliberately NOT a score component: the
+    interview style), with one small exception: easy_apply adds
+    scoring.easy_apply_points, because a one-click application is cheaper to
+    send. Posting age is deliberately NOT a score component: the
     report and dashboard already sort by date within a score, so folding
     freshness into the number too just double-counted it — and the brand-new
     boost was slamming distinct roles into the 100 clamp, producing an
@@ -248,7 +251,8 @@ def combine(
     # enterprise postings that genuinely run a wide stack.
     over = max(0, tech_breadth - scoring.breadth_threshold)
     breadth_penalty = min(scoring.breadth_penalty_max, over * scoring.breadth_points)
-    return _clamp(base + loc + interview_bonus - breadth_penalty)
+    easy = scoring.easy_apply_points if easy_apply else 0
+    return _clamp(base + loc + interview_bonus + easy - breadth_penalty)
 
 
 def score_posting(
@@ -378,7 +382,8 @@ def _parse(content: str, posting: Posting, scoring: ScoringConfig, no_whiteboard
     breadth = tech_breadth(posting.description)
 
     return Match(
-        score=combine(skill, seniority, domain, tier, scoring, bonus, breadth),
+        score=combine(skill, seniority, domain, tier, scoring, bonus, breadth,
+                      easy_apply=posting.source_meta.get("apply_method") == EASY_APPLY),
         skill_fit=skill,
         seniority_fit=seniority,
         domain_fit=domain,

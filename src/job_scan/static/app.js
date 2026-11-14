@@ -263,11 +263,12 @@ async function logFollowup(fp) {
 }
 
 async function saveNotes(fp, notes) {
-  await fetch(`/api/postings/${fp}/notes`, {
+  const r = await fetch(`/api/postings/${fp}/notes`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ notes }),
-  });
+  }).catch(() => null);
+  if (!r || !r.ok) alert("Failed to save notes");
 }
 
 // Nudge state for an open application: "due" (quiet past threshold, a note is
@@ -477,7 +478,12 @@ async function load() {
     values.forEach(v => params.append("status", v));
   });
   if (qEl.value.trim()) params.set("q", qEl.value.trim());
-  const r = await fetch(`/api/postings?${params}`);
+  const r = await fetch(`/api/postings?${params}`).catch(() => null);
+  if (!r || !r.ok) {
+    // Keep whatever is on screen; only an empty board needs the message.
+    if (!postings.length) groupsEl.innerHTML = '<p class="empty">Could not reach the job-scan server.</p>';
+    return;
+  }
   postings = await r.json();
   renderGroups();
   loadStats();
